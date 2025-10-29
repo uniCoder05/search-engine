@@ -1,33 +1,76 @@
 package searchengine.model;
 
+import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.ToString;
+import org.hibernate.annotations.BatchSize;
 
-import javax.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Entity
 @Table(name = "site")
 @NoArgsConstructor
 @Getter
 @Setter
+@ToString(exclude = {"pages", "lemmas"})
 public class Site {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
-    @Column(columnDefinition = "ENUM('INDEXING', 'INDEXED', 'FILED') NOT NULL")
+    private Integer id;
+
     @Enumerated(EnumType.STRING)
+    @NotNull
     private Status status;
-    @Column(columnDefinition = "DATETIME NOT NULL")
+
+    @NotNull
+    @Column(name = "status_time", nullable = false)
     private LocalDateTime statusTime;
-    @Column(columnDefinition = "TEXT NULL")
+
+    @Column(name = "last_error", length = 255)
     private String lastError;
-    @Column(columnDefinition = "VARCHAR(255) NOT NULL")
+
+    @NotBlank
+    @Column(nullable = false, length = 255, unique = true)
     private String url;
-    @Column(columnDefinition = "VARCHAR(255) NOT NULL")
+
+    @NotBlank
+    @Column(nullable = false, length = 255)
     private String name;
-    @OneToMany(mappedBy = "site")
-    private List<Page> pages;
+
+    @OneToMany(mappedBy = "site", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @BatchSize(size = 20)
+    private List<Page> pages = new ArrayList<>();
+
+    @OneToMany(mappedBy = "site", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @BatchSize(size = 20)
+    private List<Lemma> lemmas = new ArrayList<>();
+
+    public Site(Status status, LocalDateTime statusTime, String lastError, String url, String name) {
+        this.status = status;
+        this.statusTime = statusTime;
+        this.lastError = lastError;
+        this.url = url;
+        this.name = name;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Site site = (Site) o;
+        return Objects.equals(url, site.url);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(url);
+    }
 }
