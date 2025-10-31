@@ -28,7 +28,7 @@ public class Page implements Comparable<Page> {
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "site_id", nullable = false)
-    private Site site;
+    private SitePage site;
 
     @NotNull
     @Column(nullable = false, length = 255)
@@ -46,7 +46,7 @@ public class Page implements Comparable<Page> {
     @OneToMany(mappedBy = "page", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Index> indices = new ArrayList<>();
 
-    public Page(Site site, String path, Integer answerCode, String pageContent) {
+    public Page(SitePage site, String path, Integer answerCode, String pageContent) {
         this.site = site;
         this.path = path;
         this.answerCode = answerCode;

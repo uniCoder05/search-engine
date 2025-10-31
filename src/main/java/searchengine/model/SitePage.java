@@ -9,7 +9,7 @@ import lombok.Setter;
 import lombok.ToString;
 import org.hibernate.annotations.BatchSize;
 
-import java.time.LocalDateTime;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -20,7 +20,7 @@ import java.util.Objects;
 @Getter
 @Setter
 @ToString(exclude = {"pages", "lemmas"})
-public class Site {
+public class SitePage {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -32,7 +32,7 @@ public class Site {
 
     @NotNull
     @Column(name = "status_time", nullable = false)
-    private LocalDateTime statusTime;
+    private Timestamp statusTime;
 
     @Column(name = "last_error", length = 255)
     private String lastError;
@@ -53,7 +53,7 @@ public class Site {
     @BatchSize(size = 20)
     private List<Lemma> lemmas = new ArrayList<>();
 
-    public Site(Status status, LocalDateTime statusTime, String lastError, String url, String name) {
+    public SitePage(Status status, Timestamp statusTime, String lastError, String url, String name) {
         this.status = status;
         this.statusTime = statusTime;
         this.lastError = lastError;
@@ -65,7 +65,7 @@ public class Site {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        Site site = (Site) o;
+        SitePage site = (SitePage) o;
         return Objects.equals(url, site.url);
     }
 

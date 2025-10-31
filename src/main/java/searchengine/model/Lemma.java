@@ -27,7 +27,7 @@ public class Lemma implements Comparable<Lemma> {
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "site_id", nullable = false)
-    private Site site;
+    private SitePage site;
 
     @NotNull
     @Column(name = "lemma_text", nullable = false, length = 255)
@@ -40,13 +40,13 @@ public class Lemma implements Comparable<Lemma> {
     @OneToMany(mappedBy = "lemma", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Index> indexes = new ArrayList<>();
 
-    public Lemma(String lemma, Site site) {
+    public Lemma(String lemma, SitePage site) {
         this.lemma = lemma;
         this.site = site;
         this.frequency = 0;
     }
 
-    public Lemma(String lemma, Integer frequency, Site site) {
+    public Lemma(String lemma, Integer frequency, SitePage site) {
         this.lemma = lemma;
         this.frequency = frequency;
         this.site = site;
