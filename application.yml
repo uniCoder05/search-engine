@@ -3,23 +3,25 @@ server:
 
 spring:
   datasource:
-    username: root
-    password: testtest
-    url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
+    username: usr
+    password: pwd
+    url: jdbc:postgresql://localhost:5430/demoDB
   jpa:
     properties:
       hibernate:
-      dialect: org.hibernate.dialect.MySQL8Dialect
+      dialect: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
     show-sql: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
 
 indexing-settings:
   sites:
     - url: https://www.lenta.ru
       name: Лента.ру
-    - url: https://www.skillbox.ru
-      name: Skillbox
     - url: https://www.playback.ru
       name: PlayBack.Ru
     - url: https://ria.ru
