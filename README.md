@@ -1,2 +1,2 @@
 # search-engine
-The final project on Skillbox
+The final project
