@@ -13,5 +13,5 @@ public class RankDto {
     private Page page;
     private double absRelevance = 0.0;
     private double relativeRelevance = 0.0;
-    private int maxLemmaRank = 0;
+    private float maxLemmaRank = 0.0f;
 }
