@@ -31,9 +31,9 @@ public class Index {
 
     @NotNull
     @Column(name = "rank_value", nullable = false)
-    private Float rank;
+    private Integer rank;
 
-    public Index(Page page, Lemma lemma, Float rank) {
+    public Index(Page page, Lemma lemma, Integer rank) {
         this.page = page;
         this.lemma = lemma;
         this.rank = rank;

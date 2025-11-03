@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS search_index (
     id SERIAL PRIMARY KEY,
     page_id INTEGER NOT NULL,
     lemma_id INTEGER NOT NULL,
-    rank_value REAL NOT NULL,
+    rank_value INTEGER NOT NULL,
     FOREIGN KEY (page_id) REFERENCES page(id),
     FOREIGN KEY (lemma_id) REFERENCES lemma(id)
 );
