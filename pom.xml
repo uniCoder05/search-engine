@@ -63,9 +63,9 @@
             <version>1.21.2</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.lucene</groupId>
-            <artifactId>lucene-core</artifactId>
-            <version>10.3.1</version>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-core</artifactId>
+            <version>1.5.20</version>
         </dependency>
         <!--        зависимости библиотек лемматизаторов-->
         <dependency>
@@ -95,6 +95,7 @@
         </dependency>
     </dependencies>
 
+    <!--        репозиторий для библиотек лемматизаторов-->
     <repositories>
         <repository>
             <id>skillbox-gitlab</id>
