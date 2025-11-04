@@ -16,6 +16,8 @@ import searchengine.services.LemmaService;
 import searchengine.services.PageIndexerService;
 
 import java.net.URL;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -52,11 +54,11 @@ public class ApiServiceImpl implements ApiService {
 
     @Override
     public void refreshPage(SitePage siteDomain, URL url) {
-        SitePage existSitePate = siteRepository.getSitePageByUrl(siteDomain.getUrl());
-        siteDomain.setId(existSitePate.getId());
+        SitePage existSitePage = siteRepository.getSitePageByUrl(siteDomain.getUrl());
+        siteDomain.setId(existSitePage.getId());
         ConcurrentHashMap<String, Page> resultForkJoinPageIndexer = new ConcurrentHashMap<>();
         try {
-            log.info("Запущена переиндексация страницы:" + url.toString());
+            log.info("Запущена переиндексация страницы:{}", url.toString());
             PageFinder f = new PageFinder(siteRepository, pageRepository, siteDomain, url.getPath(), resultForkJoinPageIndexer, connection, lemmaService, pageIndexerService, indexingProcessing);
             f.refreshPage();
         } catch (SecurityException ex) {
@@ -65,7 +67,7 @@ public class ApiServiceImpl implements ApiService {
             sitePage.setLastError(ex.getMessage());
             siteRepository.save(sitePage);
         }
-        log.info("Проиндексирован сайт: " + siteDomain.getName());
+        log.info("Проиндексирован сайт: {}", siteDomain.getName());
         SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
         sitePage.setStatus(Status.INDEXED);
         siteRepository.save(sitePage);
@@ -88,6 +90,7 @@ public class ApiServiceImpl implements ApiService {
             sitePageDAO.setStatus(Status.INDEXING);
             sitePageDAO.setName(siteApp.getName());
             sitePageDAO.setUrl(siteApp.getUrl().toString());
+            sitePageDAO.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
             siteRepository.save(sitePageDAO);
         }
     }
@@ -105,7 +108,7 @@ public class ApiServiceImpl implements ApiService {
             Runnable indexSite = () -> {
                 ConcurrentHashMap<String, Page> resultForkJoinPageIndexer = new ConcurrentHashMap<>();
                 try {
-                    log.info("Запущена индексация " + siteDomain.getUrl());
+                    log.info("Запущена индексация {}", siteDomain.getUrl());
                     new ForkJoinPool().invoke(new PageFinder(siteRepository, pageRepository, siteDomain, "", resultForkJoinPageIndexer, connection, lemmaService, pageIndexerService, indexingProcessing));
                 } catch (SecurityException ex) {
                     SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
@@ -120,7 +123,7 @@ public class ApiServiceImpl implements ApiService {
                     sitePage.setLastError("Indexing stopped by user");
                     siteRepository.save(sitePage);
                 } else {
-                    log.info("Проиндексирован сайт: " + siteDomain.getUrl());
+                    log.info("Проиндексирован сайт: {}", siteDomain.getUrl());
                     SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
                     sitePage.setStatus(Status.INDEXED);
                     siteRepository.save(sitePage);

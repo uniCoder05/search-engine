@@ -1,5 +1,6 @@
 package searchengine.services.impl;
 
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -38,6 +39,7 @@ public class SearchServiceImpl implements SearchService {
     private final Status indexSuccessStatus = Status.INDEXED;
     private final double frequencyLimitProportion = 100;
 
+    @Transactional
     @Override
     public ResponseEntity<Object> search(String query, String site, Integer offset, Integer limit) throws IOException {
         if (checkIndexStatusNotIndexed(site)) {

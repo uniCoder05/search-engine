@@ -83,7 +83,7 @@ public class PageFinder extends RecursiveAction {
             sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
             siteRepository.save(sitePage);
             pageRepository.save(indexingPage);
-            log.debug("ERROR INDEXATION, siteId:" + indexingPage.getSite().getId() + ", path:" + indexingPage.getPath() + ",code:" + indexingPage.getAnswerCode() + ", error:" + ex.getMessage());
+            log.debug("ERROR INDEXATION, siteId:{}, path:{},code:{}, error:{}", indexingPage.getSite().getId(), indexingPage.getPath(), indexingPage.getAnswerCode(), ex.getMessage());
             return;
         }
         if (resultForkJoinPoolIndexedPages.get(page) != null || !indexingProcessing.get()) {
