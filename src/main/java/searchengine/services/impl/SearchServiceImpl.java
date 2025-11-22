@@ -155,7 +155,7 @@ public class SearchServiceImpl implements SearchService {
             }
         }
         result = result.stream().sorted(Comparator.comparingInt(SearchDataResponse::getWordsFound).reversed()).toList();
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok().body(new SearchResponse(true, result.size(), result));
     }
 
     private Boolean checkIndexStatusNotIndexed(String site) {
