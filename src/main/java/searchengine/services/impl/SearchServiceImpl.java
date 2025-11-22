@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import searchengine.dto.RankDto;
 import searchengine.dto.responses.NotOkResponse;
+import searchengine.dto.responses.OkResponse;
 import searchengine.dto.responses.SearchDataResponse;
 import searchengine.dto.responses.SearchResponse;
 import searchengine.model.Index;
@@ -42,6 +43,9 @@ public class SearchServiceImpl implements SearchService {
     @Transactional
     @Override
     public ResponseEntity<Object> search(String query, String site, Integer offset, Integer limit) throws IOException {
+        if(query.isEmpty()) {
+            return ResponseEntity.ok().body(new NotOkResponse("Задан пустой поисковый запрос"));
+        }
         if (checkIndexStatusNotIndexed(site)) {
             return ResponseEntity.badRequest().body(new NotOkResponse("Индексация сайта для поиска не закончена"));
         }
@@ -62,7 +66,7 @@ public class SearchServiceImpl implements SearchService {
         });
 
         if (lemmasForSearch.isEmpty()) {
-            return ResponseEntity.ok(Collections.emptyList());
+            return ResponseEntity.ok().body(new SearchResponse(true, 0, Collections.emptyList()));
         }
 
         //Sorting lemmas by frequent
