@@ -3,7 +3,7 @@ package searchengine.services.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import searchengine.config.Connection;
+import searchengine.config.ConfigConnection;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.model.Page;
@@ -35,7 +35,7 @@ public class ApiServiceImpl implements ApiService {
     private final PageRepository pageRepository;
     private final SitesList sitesToIndexing;
     private final Set<SitePage> sitePagesAllFromDB;
-    private final Connection connection;
+    private final ConfigConnection configConnection;
     private AtomicBoolean indexingProcessing;
 
 
@@ -59,8 +59,11 @@ public class ApiServiceImpl implements ApiService {
         ConcurrentHashMap<String, Page> resultForkJoinPageIndexer = new ConcurrentHashMap<>();
         try {
             log.info("Запущена переиндексация страницы:{}", url.toString());
-            PageFinder f = new PageFinder(siteRepository, pageRepository, siteDomain, url.getPath(), resultForkJoinPageIndexer, connection, lemmaService, pageIndexerService, indexingProcessing);
-            f.refreshPage();
+//            PageFinder pageFinder = new PageFinder(siteRepository, pageRepository, siteDomain, url.getPath(), resultForkJoinPageIndexer, connection, lemmaService, pageIndexerService, indexingProcessing);
+            PageFinder pageFinder = new PageFinder(pageIndexerService, lemmaService,
+                    siteRepository, pageRepository, indexingProcessing, configConnection,
+            url.getPath(), siteDomain, resultForkJoinPageIndexer);
+            pageFinder.refreshPage();
         } catch (SecurityException ex) {
             SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
             sitePage.setStatus(Status.FAILED);
@@ -109,7 +112,12 @@ public class ApiServiceImpl implements ApiService {
                 ConcurrentHashMap<String, Page> resultForkJoinPageIndexer = new ConcurrentHashMap<>();
                 try {
                     log.info("Запущена индексация {}", siteDomain.getUrl());
-                    new ForkJoinPool().invoke(new PageFinder(siteRepository, pageRepository, siteDomain, "", resultForkJoinPageIndexer, connection, lemmaService, pageIndexerService, indexingProcessing));
+//                    new ForkJoinPool().invoke(new PageFinder(siteRepository, pageRepository, siteDomain, "", resultForkJoinPageIndexer, connection, lemmaService, pageIndexerService, indexingProcessing));
+                    new ForkJoinPool().invoke(new PageFinder(pageIndexerService,
+                            lemmaService, siteRepository,
+                            pageRepository, indexingProcessing,
+                            configConnection, "", siteDomain,
+                            resultForkJoinPageIndexer));
                 } catch (SecurityException ex) {
                     SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
                     sitePage.setStatus(Status.FAILED);

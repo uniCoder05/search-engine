@@ -2,10 +2,11 @@ package searchengine.services.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
-import searchengine.config.Connection;
+import searchengine.config.ConfigConnection;
 import searchengine.model.Page;
 import searchengine.model.SitePage;
 import searchengine.repository.PageRepository;
@@ -13,7 +14,6 @@ import searchengine.repository.SiteRepository;
 import searchengine.services.LemmaService;
 import searchengine.services.PageIndexerService;
 
-import java.io.*;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -32,18 +32,22 @@ public class PageFinder extends RecursiveAction {
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final AtomicBoolean indexingProcessing;
-    private final Connection connection;
+    private final ConfigConnection configConnection;
     private final Set<String> urlSet = new HashSet<>();
-    private final String page;
+    private final String pagePath;
     private final SitePage siteDomain;
     private final ConcurrentHashMap<String, Page> resultForkJoinPoolIndexedPages;
 
-    public PageFinder(SiteRepository siteRepository, PageRepository pageRepository, SitePage siteDomain, String page, ConcurrentHashMap<String, Page> resultForkJoinPoolIndexedPages, Connection connection, LemmaService lemmaService, PageIndexerService pageIndexerService, AtomicBoolean indexingProcessing) {
+    public PageFinder(SiteRepository siteRepository, PageRepository pageRepository,
+                      SitePage siteDomain, String pagePath,
+                      ConcurrentHashMap<String, Page> resultForkJoinPoolIndexedPages,
+                      ConfigConnection configConnection, LemmaService lemmaService,
+                      PageIndexerService pageIndexerService, AtomicBoolean indexingProcessing) {
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
-        this.page = page;
+        this.pagePath = pagePath;
         this.resultForkJoinPoolIndexedPages = resultForkJoinPoolIndexedPages;
-        this.connection = connection;
+        this.configConnection = configConnection;
         this.indexingProcessing = indexingProcessing;
         this.siteDomain = siteDomain;
         this.lemmaService = lemmaService;
@@ -52,25 +56,25 @@ public class PageFinder extends RecursiveAction {
 
     @Override
     protected void compute() {
-        if (resultForkJoinPoolIndexedPages.get(page) != null || !indexingProcessing.get()) {
+        if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
             return;
         }
         Page indexingPage = new Page();
-        indexingPage.setPath(page);
+        indexingPage.setPath(pagePath);
         indexingPage.setSite(siteDomain);
 
         try {
-            org.jsoup.Connection connect = Jsoup.connect(siteDomain.getUrl() + page).userAgent(connection.getUserAgent()).referrer(connection.getReferer());
+            Connection connect = getConnection(siteDomain.getUrl() + pagePath);
             Document doc = connect.timeout(60000).get();
 
-            indexingPage.setPageContent(doc.head() + String.valueOf(doc.body()));
+            indexingPage.setPageContent(getContent(doc));
             if (indexingPage.getPageContent() == null || indexingPage.getPageContent().isEmpty() || indexingPage.getPageContent().isBlank()) {
                 throw new Exception("Content of site id:" + indexingPage.getSite().getId() + ", page:" + indexingPage.getPath() + " is null or empty");
             }
             Elements pages = doc.getElementsByTag("a");
             for (org.jsoup.nodes.Element element : pages)
                 if (!element.attr("href").isEmpty() && element.attr("href").charAt(0) == '/') {
-                    if (resultForkJoinPoolIndexedPages.get(page) != null || !indexingProcessing.get()) {
+                    if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
                         return;
                     } else if (resultForkJoinPoolIndexedPages.get(element.attr("href")) == null) {
                         urlSet.add(element.attr("href"));
@@ -86,7 +90,7 @@ public class PageFinder extends RecursiveAction {
             log.debug("ERROR INDEXATION, siteId:{}, path:{},code:{}, error:{}", indexingPage.getSite().getId(), indexingPage.getPath(), indexingPage.getAnswerCode(), ex.getMessage());
             return;
         }
-        if (resultForkJoinPoolIndexedPages.get(page) != null || !indexingProcessing.get()) {
+        if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
             return;
         }
         resultForkJoinPoolIndexedPages.putIfAbsent(indexingPage.getPath(), indexingPage);
@@ -98,7 +102,7 @@ public class PageFinder extends RecursiveAction {
         List<PageFinder> indexingPagesTasks = new ArrayList<>();
         for (String url : urlSet) {
             if (resultForkJoinPoolIndexedPages.get(url) == null && indexingProcessing.get()) {
-                PageFinder task = new PageFinder(siteRepository, pageRepository, sitePage, url, resultForkJoinPoolIndexedPages, connection, lemmaService, pageIndexerService, indexingProcessing);
+                PageFinder task = new PageFinder(siteRepository, pageRepository, sitePage, url, resultForkJoinPoolIndexedPages, configConnection, lemmaService, pageIndexerService, indexingProcessing);
                 task.fork();
                 indexingPagesTasks.add(task);
             }
@@ -115,13 +119,13 @@ public class PageFinder extends RecursiveAction {
     public void refreshPage() {
 
         Page indexingPage = new Page();
-        indexingPage.setPath(page);
+        indexingPage.setPath(pagePath);
         indexingPage.setSite(siteDomain);
 
         try {
-            org.jsoup.Connection connect = Jsoup.connect(siteDomain.getUrl() + page).userAgent(connection.getUserAgent()).referrer(connection.getReferer());
+            Connection connect = getConnection(siteDomain.getUrl() + pagePath);
             Document doc = connect.timeout(60000).get();
-            indexingPage.setPageContent(doc.head() + String.valueOf(doc.body()));
+            indexingPage.setPageContent(getContent(doc));
             indexingPage.setAnswerCode(doc.connection().response().statusCode());
             if (indexingPage.getPageContent() == null || indexingPage.getPageContent().isEmpty() || indexingPage.getPageContent().isBlank()) {
                 throw new Exception("Content of site id:" + indexingPage.getSite().getId() + ", page:" + indexingPage.getPath() + " is null or empty");
@@ -138,7 +142,7 @@ public class PageFinder extends RecursiveAction {
         sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
         siteRepository.save(sitePage);
 
-        Page pageToRefresh = pageRepository.findPageBySiteIdAndPath(page, sitePage.getId());
+        Page pageToRefresh = pageRepository.findPageBySiteIdAndPath(pagePath, sitePage.getId());
         if (pageToRefresh != null) {
             pageToRefresh.setAnswerCode(indexingPage.getAnswerCode());
             pageToRefresh.setPageContent(indexingPage.getPageContent());
@@ -148,6 +152,17 @@ public class PageFinder extends RecursiveAction {
             pageRepository.save(indexingPage);
             pageIndexerService.refreshIndex(indexingPage.getPageContent(), indexingPage);
         }
+    }
+
+    private Connection getConnection(String url) {
+
+        return Jsoup.connect(url)
+                .userAgent(configConnection.getUserAgent())
+                .referrer(configConnection.getReferer());
+    }
+
+    private String getContent(Document document) {
+        return document.head() + String.valueOf(document.body());
     }
 
     void errorHandling(Exception ex, Page indexingPage) {
