@@ -82,7 +82,8 @@ public class PageFinder extends RecursiveAction {
                 }
             indexingPage.setAnswerCode(doc.connection().response().statusCode());
         } catch (Exception ex) {
-            errorHandling(ex, indexingPage);resultForkJoinPoolIndexedPages.putIfAbsent(indexingPage.getPath(), indexingPage);
+            errorHandling(ex, indexingPage);
+            resultForkJoinPoolIndexedPages.putIfAbsent(indexingPage.getPath(), indexingPage);
             SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
             sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
             siteRepository.save(sitePage);
