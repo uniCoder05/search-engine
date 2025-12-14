@@ -3,23 +3,21 @@ package searchengine.services.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Connection;
+import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import searchengine.config.ConfigConnection;
 import searchengine.model.Page;
 import searchengine.model.SitePage;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-import searchengine.services.LemmaService;
 import searchengine.services.PageIndexerService;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,8 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 @RequiredArgsConstructor
 public class PageFinder extends RecursiveAction {
+    private static final String MASK = "[?#.]+";
+
     private final PageIndexerService pageIndexerService;
-    private final LemmaService lemmaService;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final AtomicBoolean indexingProcessing;
@@ -36,27 +35,40 @@ public class PageFinder extends RecursiveAction {
     private final Set<String> urlSet = new HashSet<>();
     private final String pagePath;
     private final SitePage siteDomain;
-    private final ConcurrentHashMap<String, Page> resultForkJoinPoolIndexedPages;
+    private final Map<String, Page> visitedLinks;
+    private final String mask;
 
     public PageFinder(SiteRepository siteRepository, PageRepository pageRepository,
                       SitePage siteDomain, String pagePath,
-                      ConcurrentHashMap<String, Page> resultForkJoinPoolIndexedPages,
-                      ConfigConnection configConnection, LemmaService lemmaService,
-                      PageIndexerService pageIndexerService, AtomicBoolean indexingProcessing) {
+                      ConfigConnection configConnection,
+                      PageIndexerService pageIndexerService,
+                      AtomicBoolean indexingProcessing) {
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
         this.pagePath = pagePath;
-        this.resultForkJoinPoolIndexedPages = resultForkJoinPoolIndexedPages;
         this.configConnection = configConnection;
         this.indexingProcessing = indexingProcessing;
         this.siteDomain = siteDomain;
-        this.lemmaService = lemmaService;
         this.pageIndexerService = pageIndexerService;
+        this.mask = MASK + siteDomain;
+        this.visitedLinks = new ConcurrentHashMap<>();
+    }
+
+    private PageFinder(PageFinder pageFinder, String url) {
+        this.siteRepository = pageFinder.siteRepository;
+        this.pageRepository = pageFinder.pageRepository;
+        this.pagePath = url;
+        this.configConnection = pageFinder.configConnection;
+        this.indexingProcessing = pageFinder.indexingProcessing;
+        this.siteDomain = pageFinder.siteDomain;
+        this.pageIndexerService = pageFinder.pageIndexerService;
+        this.mask = pageFinder.mask;
+        this.visitedLinks = pageFinder.visitedLinks;
     }
 
     @Override
     protected void compute() {
-        if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
+        if (visitedLinks.get(pagePath) != null || !indexingProcessing.get()) {
             return;
         }
         Page indexingPage = new Page();
@@ -71,39 +83,37 @@ public class PageFinder extends RecursiveAction {
             if (indexingPage.getPageContent() == null || indexingPage.getPageContent().isEmpty() || indexingPage.getPageContent().isBlank()) {
                 throw new Exception("Content of site id:" + indexingPage.getSite().getId() + ", page:" + indexingPage.getPath() + " is null or empty");
             }
-            Elements pages = doc.getElementsByTag("a");
-            for (org.jsoup.nodes.Element element : pages)
-                if (!element.attr("href").isEmpty() && element.attr("href").charAt(0) == '/') {
-                    if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
+            Elements links = doc.getElementsByTag("a");
+            for (Element link : links)
+                if (!link.attr("href").isEmpty() && link.attr("href").charAt(0) == '/') {
+                    if (visitedLinks.get(pagePath) != null || !indexingProcessing.get()) {
                         return;
-                    } else if (resultForkJoinPoolIndexedPages.get(element.attr("href")) == null) {
-                        urlSet.add(element.attr("href"));
+                    } else if (visitedLinks.get(link.attr("href")) == null) {
+                        urlSet.add(link.attr("href"));
                     }
                 }
             indexingPage.setAnswerCode(doc.connection().response().statusCode());
+        } catch (HttpStatusException e) {
+            log.info("HttpStatusException code:{} for url: {}", siteDomain + pagePath, e.getStatusCode());
         } catch (Exception ex) {
             errorHandling(ex, indexingPage);
-            resultForkJoinPoolIndexedPages.putIfAbsent(indexingPage.getPath(), indexingPage);
-            SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-            sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-            siteRepository.save(sitePage);
+            visitedLinks.putIfAbsent(indexingPage.getPath(), indexingPage);
+            updateSiteStatusTimeAndSave();
             pageRepository.save(indexingPage);
             log.debug("ERROR INDEXATION, siteId:{}, path:{},code:{}, error:{}", indexingPage.getSite().getId(), indexingPage.getPath(), indexingPage.getAnswerCode(), ex.getMessage());
             return;
         }
-        if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
+        if (visitedLinks.get(pagePath) != null || !indexingProcessing.get()) {
             return;
         }
-        resultForkJoinPoolIndexedPages.putIfAbsent(indexingPage.getPath(), indexingPage);
-        SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-        sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-        siteRepository.save(sitePage);
+        visitedLinks.putIfAbsent(indexingPage.getPath(), indexingPage);
+        updateSiteStatusTimeAndSave();
         pageRepository.save(indexingPage);
         pageIndexerService.indexHtml(indexingPage.getPageContent(), indexingPage);
         List<PageFinder> indexingPagesTasks = new ArrayList<>();
         for (String url : urlSet) {
-            if (resultForkJoinPoolIndexedPages.get(url) == null && indexingProcessing.get()) {
-                PageFinder task = new PageFinder(siteRepository, pageRepository, sitePage, url, resultForkJoinPoolIndexedPages, configConnection, lemmaService, pageIndexerService, indexingProcessing);
+            if (visitedLinks.get(url) == null && indexingProcessing.get()) {
+                PageFinder task = new PageFinder(this, url);
                 task.fork();
                 indexingPagesTasks.add(task);
             }
@@ -133,17 +143,12 @@ public class PageFinder extends RecursiveAction {
             }
         } catch (Exception ex) {
             errorHandling(ex, indexingPage);
-            SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-            sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-            siteRepository.save(sitePage);
+            updateSiteStatusTimeAndSave();
             pageRepository.save(indexingPage);
             return;
         }
-        SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-        sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-        siteRepository.save(sitePage);
-
-        Page pageToRefresh = pageRepository.findPageBySiteIdAndPath(pagePath, sitePage.getId());
+        updateSiteStatusTimeAndSave();
+        Page pageToRefresh = pageRepository.findPageBySiteIdAndPath(pagePath, siteDomain.getId());
         if (pageToRefresh != null) {
             pageToRefresh.setAnswerCode(indexingPage.getAnswerCode());
             pageToRefresh.setPageContent(indexingPage.getPageContent());
@@ -163,7 +168,30 @@ public class PageFinder extends RecursiveAction {
     }
 
     private String getContent(Document document) {
-        return document.head() + String.valueOf(document.body());
+        return document.html();
+    }
+
+    //Метод для проверки ссылки на валидность
+    private boolean isValidLink(String link) {
+        //Проверка на пустоту
+        if(link.isBlank()) {
+            return false;
+        }
+        //Проверка на соответствие маске url + любые символы, кроме ?.#
+        if(!link.matches(mask)) {
+            return false;
+        }
+        //Проверка, ссылка на уникальность
+        if(visitedLinks.containsKey(link)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void updateSiteStatusTimeAndSave() {
+        siteDomain.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
+        siteRepository.save(siteDomain);
     }
 
     void errorHandling(Exception ex, Page indexingPage) {

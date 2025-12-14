@@ -6,13 +6,11 @@ import org.springframework.stereotype.Service;
 import searchengine.config.ConfigConnection;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
-import searchengine.model.Page;
 import searchengine.model.SitePage;
 import searchengine.model.Status;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 import searchengine.services.ApiService;
-import searchengine.services.LemmaService;
 import searchengine.services.PageIndexerService;
 
 import java.net.URL;
@@ -21,7 +19,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -30,7 +27,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class ApiServiceImpl implements ApiService {
     private final PageIndexerService pageIndexerService;
-    private final LemmaService lemmaService;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final SitesList sitesToIndexing;
@@ -56,13 +52,11 @@ public class ApiServiceImpl implements ApiService {
     public void refreshPage(SitePage siteDomain, URL url) {
         SitePage existSitePage = siteRepository.getSitePageByUrl(siteDomain.getUrl());
         siteDomain.setId(existSitePage.getId());
-        ConcurrentHashMap<String, Page> resultForkJoinPageIndexer = new ConcurrentHashMap<>();
         try {
             log.info("Запущена переиндексация страницы:{}", url.toString());
-//            PageFinder pageFinder = new PageFinder(siteRepository, pageRepository, siteDomain, url.getPath(), resultForkJoinPageIndexer, connection, lemmaService, pageIndexerService, indexingProcessing);
-            PageFinder pageFinder = new PageFinder(pageIndexerService, lemmaService,
-                    siteRepository, pageRepository, indexingProcessing, configConnection,
-            url.getPath(), siteDomain, resultForkJoinPageIndexer);
+            PageFinder pageFinder = new PageFinder(siteRepository,
+                    pageRepository, siteDomain, url.getPath(),
+            configConnection, pageIndexerService, indexingProcessing);
             pageFinder.refreshPage();
         } catch (SecurityException ex) {
             SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
@@ -109,15 +103,13 @@ public class ApiServiceImpl implements ApiService {
         List<Thread> indexingThreadList = new ArrayList<>();
         for (SitePage siteDomain : sitePagesAllFromDB) {
             Runnable indexSite = () -> {
-                ConcurrentHashMap<String, Page> resultForkJoinPageIndexer = new ConcurrentHashMap<>();
                 try {
                     log.info("Запущена индексация {}", siteDomain.getUrl());
-//                    new ForkJoinPool().invoke(new PageFinder(siteRepository, pageRepository, siteDomain, "", resultForkJoinPageIndexer, connection, lemmaService, pageIndexerService, indexingProcessing));
-                    new ForkJoinPool().invoke(new PageFinder(pageIndexerService,
-                            lemmaService, siteRepository,
-                            pageRepository, indexingProcessing,
-                            configConnection, "", siteDomain,
-                            resultForkJoinPageIndexer));
+                    new ForkJoinPool().invoke(new PageFinder(siteRepository,
+                            pageRepository,
+                            siteDomain, "/",
+                            configConnection, pageIndexerService,
+                            indexingProcessing));
                 } catch (SecurityException ex) {
                     SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
                     sitePage.setStatus(Status.FAILED);

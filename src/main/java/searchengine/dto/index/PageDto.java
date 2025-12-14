@@ -5,7 +5,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import searchengine.model.SitePage;
-import searchengine.repository.PageRepository;
 
 @Setter
 @Getter
