@@ -68,6 +68,17 @@ public class PageFinder extends RecursiveAction {
 
     @Override
     protected void compute() {
+        Set<PageFinder> subTasks = new HashSet<>();
+        crawl(subTasks);
+        for (PageFinder task : subTasks) {
+            if(!indexingProcessing.get()) {
+                return;
+            }
+            task.join();
+        }
+    }
+
+    public void crawl(Set<PageFinder> subTasks) {
         if (visitedLinks.get(pagePath) != null || !indexingProcessing.get()) {
             return;
         }
@@ -110,21 +121,13 @@ public class PageFinder extends RecursiveAction {
         updateSiteStatusTimeAndSave();
         pageRepository.save(indexingPage);
         pageIndexerService.indexHtml(indexingPage.getPageContent(), indexingPage);
-        List<PageFinder> indexingPagesTasks = new ArrayList<>();
         for (String url : urlSet) {
             if (visitedLinks.get(url) == null && indexingProcessing.get()) {
                 PageFinder task = new PageFinder(this, url);
                 task.fork();
-                indexingPagesTasks.add(task);
+                subTasks.add(task);
             }
         }
-        for (PageFinder page : indexingPagesTasks) {
-            if (!indexingProcessing.get()) {
-                return;
-            }
-            page.join();
-        }
-
     }
 
     public void refreshPage() {
