@@ -54,8 +54,9 @@ public class ApiServiceImpl implements ApiService {
         siteDomain.setId(existSitePage.getId());
         try {
             log.info("Запущена переиндексация страницы:{}", url.toString());
-            PageFinder pageFinder = new PageFinder(siteRepository,
-                    pageRepository, siteDomain, url.getPath(),
+            PageFinder pageFinder = new PageFinder(siteDomain,
+                    siteRepository,
+                    pageRepository,
             configConnection, pageIndexerService, indexingProcessing);
             pageFinder.refreshPage();
         } catch (SecurityException ex) {
@@ -105,9 +106,9 @@ public class ApiServiceImpl implements ApiService {
             Runnable indexSite = () -> {
                 try {
                     log.info("Запущена индексация {}", siteDomain.getUrl());
-                    new ForkJoinPool().invoke(new PageFinder(siteRepository,
+                    new ForkJoinPool().invoke(new PageFinder(siteDomain,
+                            siteRepository,
                             pageRepository,
-                            siteDomain, "/",
                             configConnection, pageIndexerService,
                             indexingProcessing));
                 } catch (SecurityException ex) {

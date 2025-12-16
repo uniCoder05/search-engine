@@ -10,6 +10,7 @@ import lombok.ToString;
 import org.hibernate.annotations.BatchSize;
 
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -72,5 +73,11 @@ public class SitePage {
     @Override
     public int hashCode() {
         return Objects.hash(url);
+    }
+
+    //Для автоматического обновления statusTime при сохранении SitePage
+    @PrePersist
+    protected void onPersist() {
+        this.statusTime = Timestamp.valueOf(LocalDateTime.now());
     }
 }
