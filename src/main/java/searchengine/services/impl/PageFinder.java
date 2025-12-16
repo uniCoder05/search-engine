@@ -24,16 +24,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 @RequiredArgsConstructor
 public class PageFinder extends RecursiveAction {
-    private static final String MASK = "[?#.]+";
+    private static final String MASK = "[^#?.]+";
 
-    private final PageIndexerService pageIndexerService;
+    private final SitePage siteDomain;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
+    private final PageIndexerService pageIndexerService;
     private final AtomicBoolean indexingProcessing;
     private final ConfigConnection configConnection;
-    private final Set<String> urlSet = new HashSet<>();
     private final String urlPage;
-    private final SitePage siteDomain;
     private final Set<String> visitedLinks;
     private final String mask;
 
@@ -49,7 +48,7 @@ public class PageFinder extends RecursiveAction {
         this.indexingProcessing = indexingProcessing;
         this.siteDomain = siteDomain;
         this.pageIndexerService = pageIndexerService;
-        this.mask = MASK + siteDomain;
+        this.mask = siteDomain.getUrl() + MASK;
         this.visitedLinks = ConcurrentHashMap.newKeySet();
     }
 
@@ -88,14 +87,14 @@ public class PageFinder extends RecursiveAction {
         String content = "";
         int statusCode = 0;
         try {
+            pause(150, 300);
             path = new URI(urlPage).getPath();
             indexingPage.setPath(path);
             Connection connection = getConnection(urlPage);
             var response = connection.execute();
             statusCode = response.statusCode();
-            if (statusCode == 200) {
                 Document document = connection
-                        .timeout(60_000)
+                        .timeout(20_000)
                         .get();
                 content = getContent(document);//Даже если контент пустой, всё равно сохраняем и идём дальше
                 Elements links = document.getElementsByTag("a");
@@ -113,28 +112,30 @@ public class PageFinder extends RecursiveAction {
                     PageFinder task = new PageFinder(this, url);
                     task.fork();
                     subTasks.add(task);
-                }
             }
         } catch (HttpStatusException e) {
-            indexingPage.setAnswerCode(statusCode);
+            statusCode = e.getStatusCode();
             log.info("HttpStatusException code:{} for url: {}", urlPage, e.getStatusCode());
         } catch (Exception ex) {
             log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, statusCode, ex.getMessage());
         } finally {
-            indexingPage.setPageContent(content);
-            indexingPage.setAnswerCode(statusCode);
-            pageRepository.save(indexingPage);
-            updateSite();
-            if (!content.isBlank()) {
+            if (!content.isBlank() && statusCode == 200) {
+                indexingPage.setAnswerCode(statusCode);
+                indexingPage.setPath(path);
+                pageRepository.save(indexingPage);
                 pageIndexerService.indexHtml(content, indexingPage);
+                updateSite();
+            } else {
+                log.warn("Skipped saving page: {} (status: {})", urlPage, statusCode);
             }
         }
     }
 
     public void refreshPage() {
 
-        Page indexingPage = new Page();
-        indexingPage.setSite(siteDomain);
+        Page refreshPage = Optional.ofNullable(pageRepository.findPageBySiteIdAndPath(siteDomain.getId(), urlPage))
+                .orElse(new Page());
+
         String content = "";
         int statusCode = 0;
         String path = "";
@@ -145,7 +146,7 @@ public class PageFinder extends RecursiveAction {
             statusCode = response.statusCode();
             if (statusCode == 200) {
                 Document doc = connection
-                        .timeout(60000)
+                        .timeout(20_000)
                         .get();
                 content = getContent(doc); //Даже если контент пустой, всё равно сохраняем и идём дальше
             }
@@ -159,12 +160,15 @@ public class PageFinder extends RecursiveAction {
         } catch (Exception ex) {
             log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, statusCode, ex.getMessage());
         } finally {
-            indexingPage.setPath(path);
-            indexingPage.setPageContent(content);
-            indexingPage.setAnswerCode(statusCode);
-            pageRepository.save(indexingPage);
+            if (refreshPage.getSite() == null) {
+                refreshPage.setSite(siteDomain);
+                refreshPage.setPath(path);
+            }
+            refreshPage.setPageContent(content);
+            refreshPage.setAnswerCode(statusCode);
+            pageRepository.save(refreshPage);
             updateSite();
-            pageIndexerService.refreshIndex(content, indexingPage);
+            pageIndexerService.refreshIndex(content, refreshPage);
         }
     }
 
@@ -172,11 +176,13 @@ public class PageFinder extends RecursiveAction {
 
         return Jsoup.connect(url)
                 .userAgent(configConnection.getUserAgent())
-                .referrer(configConnection.getReferer());
+                .referrer(configConnection.getReferer())
+                .timeout(configConnection.getTimeout())
+                .maxBodySize(0);
     }
 
     private String getContent(Document document) {
-        return document.html();
+        return document.text();
     }
 
     //Метод для проверки ссылки на валидность
@@ -187,6 +193,7 @@ public class PageFinder extends RecursiveAction {
         }
         //Проверка на соответствие маске url + любые символы, кроме ?.#
         if (!link.matches(mask)) {
+            log.info("link {} is invalid for mask {}", link, mask);
             return false;
         }
         //Проверка, ссылка на уникальность
@@ -198,8 +205,18 @@ public class PageFinder extends RecursiveAction {
     }
 
     private void updateSite() {
-//        siteDomain.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
         siteRepository.save(siteDomain);
+    }
+
+    private void pause(int min, int max)  {
+        int duration = min + (int)(Math.random() * (max - min));
+        try {
+            //log.info(Thread.currentThread().getName() + " sleeping for " + duration + " ms");
+            Thread.sleep(duration);
+        } catch (InterruptedException e) {
+            log.info("InterruptedException while sleep", e);
+            indexingProcessing.set(false);
+        }
     }
 
 //    void errorHandling(Exception ex, Page indexingPage) {
