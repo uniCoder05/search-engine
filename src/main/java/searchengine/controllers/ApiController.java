@@ -62,18 +62,21 @@ public class ApiController {
     @PostMapping("/indexPage")
     public ResponseEntity indexPage(@RequestParam String url) throws IOException {
         URL refUrl = new URL(url);
-        Site sitePage = new Site();
+        Site site = new Site();
         try {
-            sitesList.getSites().stream().filter(site -> refUrl.getHost().equals(site.getUrl().getHost())).findFirst().map(site -> {
-                sitePage.setName(site.getName());
-                sitePage.setUrl(site.getUrl().toString());
-                return sitePage;
+            sitesList.getSites().stream()
+                    .filter(siteConfig -> refUrl.getHost().equals(siteConfig.getUrl().getHost()))
+                    .findFirst()
+                    .map(siteConfig -> {
+                site.setName(site.getName());
+                site.setUrl(siteConfig.getUrl().toString());
+                return site;
             }).orElseThrow();
         } catch (RuntimeException ex) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).
                     body(new NotOkResponse("Данная страница находится за пределами сайтов указанных в конфигурационном файле"));
         }
-        apiService.refreshPage(sitePage, refUrl);
+        apiService.refreshPage(site, refUrl);
         return ResponseEntity.status(HttpStatus.OK).body(new OkResponse());
     }
 

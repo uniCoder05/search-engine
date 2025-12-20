@@ -1,5 +1,6 @@
 package searchengine.services.impl;
 
+import lombok.Setter;
 import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
@@ -7,6 +8,7 @@ import org.jsoup.nodes.Document;
 import searchengine.config.ConfigConnection;
 import searchengine.dto.responses.HtmlParseResponse;
 import searchengine.model.Page;
+import searchengine.model.Site;
 
 import java.io.IOException;
 import java.net.URI;
@@ -16,10 +18,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 
+@Setter
 public class HtmlParserService {
     private static final String MASK = "[^?#.]+";
 
-    private final String url;
+    private String url;
     private final String rootUrl;
     private final ConfigConnection configConnection;
     private final String mask;
@@ -31,8 +34,9 @@ public class HtmlParserService {
         this.mask = rootUrl + MASK;
     }
 
-    public HtmlParseResponse parse() throws IOException {
+    public HtmlParseResponse parse() {
         Page page = new Page();
+        Site site = new Site();
         HtmlParseResponse parseResponse = new HtmlParseResponse();
         try {
             URI uri = new URI(url);
@@ -48,9 +52,7 @@ public class HtmlParserService {
         } catch (URISyntaxException | IOException e) {
             page.setAnswerCode(404);
         }
-
         parseResponse.setPage(page);
-
 
         return parseResponse;
     }

@@ -27,7 +27,7 @@ public class PageIndexerServiceImpl implements PageIndexerService {
     private final IndexRepository indexSearchRepository;
 
     @Override
-    public void indexHtml(Page indexingPage) {
+    public void index(Page indexingPage) {
         String html = indexingPage.getPageContent();
         long start = System.currentTimeMillis();
         try {

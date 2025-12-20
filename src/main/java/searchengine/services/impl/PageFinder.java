@@ -31,7 +31,6 @@ public class PageFinder extends RecursiveAction {
     private static final String MASK = "[^#?.]+";
 
     private final Site site;
-    private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final PageIndexerService pageIndexerService;
     private final AtomicBoolean indexingProcessing;
@@ -41,12 +40,11 @@ public class PageFinder extends RecursiveAction {
     private final String mask;
 
     public PageFinder(Site site,
-                      SiteRepository siteRepository, PageRepository pageRepository,
+                      PageRepository pageRepository,
                       ConfigConnection configConnection,
                       PageIndexerService pageIndexerService,
                       AtomicBoolean indexingProcessing) {
         String url = site.getUrl();
-        this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
         this.urlPage = url;
         this.configConnection = configConnection;
@@ -59,7 +57,6 @@ public class PageFinder extends RecursiveAction {
 
     private PageFinder(PageFinder pageFinder, String url) {
         this.site = pageFinder.site;
-        this.siteRepository = pageFinder.siteRepository;
         this.pageRepository = pageFinder.pageRepository;
         this.urlPage = url;
         this.configConnection = pageFinder.configConnection;
@@ -92,7 +89,6 @@ public class PageFinder extends RecursiveAction {
         if (!indexingProcessing.get()) {
             return;
         }
-
         Page indexingPage = new Page();
         indexingPage.setSite(site);
         try {
@@ -116,15 +112,32 @@ public class PageFinder extends RecursiveAction {
         } catch (Exception ex) {
             indexingPage.setAnswerCode(getErrorCodeFromException(ex));
             log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, indexingPage.getAnswerCode(), ex.getMessage());
-        } finally {
-            pageRepository.save(indexingPage);
-            if(shouldIndexPage(indexingPage)) {
-                log.info("Indexing page url: {}", urlPage);
-                pageIndexerService.indexHtml(indexingPage);
-                updateSite();
-            }
         }
 
+        pageRepository.save(indexingPage);
+        if(shouldIndexPage(indexingPage)) {
+            log.info("Indexing page url: {}", urlPage);
+            pageIndexerService.index(indexingPage);
+        }
+
+    }
+
+    public void refreshPage(String urlPage) {
+        Page refreshPage = pageRepository.findPageBySiteIdAndPath(site.getId(), urlPage);
+
+        try {
+            Connection connection = getConnection(urlPage);
+            var response = connection.execute();
+            refreshPage.setAnswerCode(response.statusCode());
+            Document doc = response.parse();
+            refreshPage.setPageContent(getContent(doc));
+        } catch (Exception ex) {
+            refreshPage.setAnswerCode(getErrorCodeFromException(ex));
+            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, refreshPage.getAnswerCode(), ex.getMessage());
+        }
+
+        pageRepository.save(refreshPage);
+        pageIndexerService.refreshIndex(refreshPage);
     }
 
     private Set<String> getInnerLinks(Document document) {
@@ -139,32 +152,6 @@ public class PageFinder extends RecursiveAction {
         return page.getAnswerCode() == 200
                 && !page.getPageContent().isBlank()
                 && indexingProcessing.get();
-    }
-
-    public void refreshPage() {
-
-        Page refreshPage = Optional.ofNullable(pageRepository.findPageBySiteIdAndPath(site.getId(), urlPage))
-                .orElse(new Page());
-        refreshPage.setSite(site);
-
-        try {
-            String path = new URI(urlPage).getPath();
-            refreshPage.setPath(path);
-            Connection connection = getConnection(urlPage);
-            var response = connection.execute();
-            refreshPage.setAnswerCode(response.statusCode());
-            if (refreshPage.getAnswerCode() == 200) {
-                Document doc = response.parse();
-                refreshPage.setPageContent(getContent(doc));//Даже если контент пустой, всё равно сохраняем и идём дальше
-            }
-        } catch (Exception ex) {
-            refreshPage.setAnswerCode(getErrorCodeFromException(ex));
-            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, refreshPage.getAnswerCode(), ex.getMessage());
-        } finally {
-            pageRepository.save(refreshPage);
-            updateSite();
-            pageIndexerService.refreshIndex(refreshPage);
-        }
     }
 
     private Connection getConnection(String url) {
@@ -197,10 +184,6 @@ public class PageFinder extends RecursiveAction {
         }
 
         return true;
-    }
-
-    private void updateSite() {
-        site.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
     }
 
 

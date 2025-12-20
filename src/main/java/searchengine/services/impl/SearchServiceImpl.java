@@ -49,7 +49,7 @@ public class SearchServiceImpl implements SearchService {
             return ResponseEntity.badRequest().body(new NotOkResponse("Индексация сайта для поиска не закончена"));
         }
         //
-        Site siteTarget = siteRepository.getSitePageByUrl(site);
+        Site siteTarget = siteRepository.getSiteByUrl(site);
         Integer countPages = siteTarget != null ? pageRepository.getCountPages(siteTarget.getId()) : pageRepository.getCountPages(null);
 
         //Exclusion lemmas by frequent
@@ -166,7 +166,7 @@ public class SearchServiceImpl implements SearchService {
             List<Site> sites = siteRepository.findAll();
             return sites.stream().anyMatch(s -> !s.getStatus().equals(indexSuccessStatus));
         }
-        return !siteRepository.getSitePageByUrl(site).getStatus().equals(indexSuccessStatus);
+        return !siteRepository.getSiteByUrl(site).getStatus().equals(indexSuccessStatus);
     }
 
     private void markWord(StringBuilder textFromElement, String word, int startPosition) {

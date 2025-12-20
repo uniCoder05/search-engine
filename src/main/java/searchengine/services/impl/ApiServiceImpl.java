@@ -3,6 +3,7 @@ package searchengine.services.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.ConfigConnection;
 import searchengine.config.SiteConfig;
 import searchengine.config.ListSiteConfig;
@@ -17,6 +18,7 @@ import java.net.URL;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
@@ -32,7 +34,6 @@ public class ApiServiceImpl implements ApiService {
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final ListSiteConfig sitesToIndexing;
-    private final Set<Site> sitePagesAllFromDB;
     private final ConfigConnection configConnection;
     private AtomicBoolean indexingProcessing;
 
@@ -41,9 +42,8 @@ public class ApiServiceImpl implements ApiService {
     public void startIndexing(AtomicBoolean indexingProcessing) {
         this.indexingProcessing = indexingProcessing;
         try {
-            deleteSitePagesAndPagesInDB();
-            addSitePagesToDB();
-            indexAllSitePages();
+            resetAndSaveAllSites();
+            indexAllSite();
         } catch (RuntimeException | InterruptedException ex) {
             indexingProcessing.set(false);
             log.error("Error: ", ex);
@@ -51,87 +51,45 @@ public class ApiServiceImpl implements ApiService {
     }
 
     @Override
-    public void refreshPage(Site siteDomain, URL url) {
-        Site existSitePage = siteRepository.getSitePageByUrl(siteDomain.getUrl());
-        siteDomain.setId(existSitePage.getId());
+    public void refreshPage(Site site, URL url) {
+        Site existSite = siteRepository.getSiteByUrl(site.getUrl());
+        site.setId(existSite.getId());
         try {
             log.info("Запущена переиндексация страницы:{}", url.toString());
-            PageFinder pageFinder = new PageFinder(siteDomain,
-                    siteRepository,
+            PageFinder pageFinder = new PageFinder(site,
                     pageRepository,
             configConnection, pageIndexerService, indexingProcessing);
-            pageFinder.refreshPage();
+            pageFinder.refreshPage(url.toString());
         } catch (SecurityException ex) {
-            Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-            sitePage.setStatus(Status.FAILED);
-            sitePage.setLastError(ex.getMessage());
-            siteRepository.save(sitePage);
+            handleIndexingError(site, ex.getMessage());
         }
-        log.info("Проиндексирован сайт: {}", siteDomain.getName());
-        Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-        sitePage.setStatus(Status.INDEXED);
-        siteRepository.save(sitePage);
+        log.info("Проиндексирован сайт: {}", site.getName());
+        saveIndexedSite(site);
     }
 
-    private void deleteSitePagesAndPagesInDB() {
-        List<Site> sitesFromDB = siteRepository.findAll();
-        for (Site sitePageDb : sitesFromDB) {
-            for (SiteConfig siteApp : sitesToIndexing.getSites()) {
-                if (sitePageDb.getUrl().equals(siteApp.getUrl().toString())) {
-                    siteRepository.deleteById(sitePageDb.getId());
-                }
-            }
-        }
-    }
-
-    private void addSitePagesToDB() {
-        for (SiteConfig siteApp : sitesToIndexing.getSites()) {
-            Site sitePageDAO = new Site();
-            sitePageDAO.setStatus(Status.INDEXING);
-            sitePageDAO.setName(siteApp.getName());
-            sitePageDAO.setUrl(siteApp.getUrl().toString());
-            sitePageDAO.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-            siteRepository.save(sitePageDAO);
-        }
-    }
-
-    private void indexAllSitePages() throws InterruptedException {
-        sitePagesAllFromDB.addAll(siteRepository.findAll());
-        List<String> urlToIndexing = new ArrayList<>();
-        for (SiteConfig siteApp : sitesToIndexing.getSites()) {
-            urlToIndexing.add(siteApp.getUrl().toString());
-        }
-        sitePagesAllFromDB.removeIf(sitePage -> !urlToIndexing.contains(sitePage.getUrl()));
-
+    private void indexAllSite() throws InterruptedException {
+        Set<Site> sites = new HashSet<>(siteRepository.findAll());
         List<Thread> indexingThreadList = new ArrayList<>();
-        for (Site siteDomain : sitePagesAllFromDB) {
+        for (Site site : sites) {
             Runnable indexSite = () -> {
                 try {
-                    log.info("Запущена индексация {}", siteDomain.getUrl());
-                    new ForkJoinPool().invoke(new PageFinder(siteDomain,
-                            siteRepository,
+                    log.info("Запущена индексация сайта id: {} url: {}", site.getId(), site.getUrl());
+                    new ForkJoinPool().invoke(new PageFinder(site,
                             pageRepository,
                             configConnection, pageIndexerService,
                             indexingProcessing));
                 } catch (SecurityException ex) {
-                    Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-                    sitePage.setStatus(Status.FAILED);
-                    sitePage.setLastError(ex.getMessage());
-                    siteRepository.save(sitePage);
+                    handleIndexingError(site, ex.getMessage());
+                } catch (Exception ex) {
+                    handleIndexingError(site, "Неожиданная ошибка");
                 }
                 if (!indexingProcessing.get()) {
-                    log.warn("Indexing stopped by user, site:" + siteDomain.getUrl());
-                    Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-                    sitePage.setStatus(Status.FAILED);
-                    sitePage.setLastError("Indexing stopped by user");
-                    siteRepository.save(sitePage);
+                    log.warn("Индексация остановлена пользователем, сайт:" + site.getUrl());
+                    handleIndexingError(site, "Индексация остановлена пользователем");
                 } else {
-                    log.info("Проиндексирован сайт: {}", siteDomain.getUrl());
-                    Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-                    sitePage.setStatus(Status.INDEXED);
-                    siteRepository.save(sitePage);
+                    log.info("Проиндексирован сайт: {}", site.getUrl());
+                    saveIndexedSite(site);
                 }
-
             };
             Thread thread = new Thread(indexSite);
             indexingThreadList.add(thread);
@@ -141,5 +99,38 @@ public class ApiServiceImpl implements ApiService {
             thread.join();
         }
         indexingProcessing.set(false);
+    }
+
+    @Transactional
+    private void resetAndSaveAllSites() {
+        siteRepository.deleteAll();
+        for(SiteConfig siteConfig : sitesToIndexing.getSites()) {
+            Site site = new Site();
+            site.setStatus(Status.INDEXING);
+            site.setName(siteConfig.getName());
+            site.setUrl(siteConfig.getUrl().toString());
+            site.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
+            siteRepository.save(site);
+            log.info("Save site id: {} url: {}", site.getId(), site.getUrl());
+        }
+    }
+
+    @Transactional
+    private void handleIndexingError(Site indexingSite, String errorMessage) {
+        int id = indexingSite.getId();
+        Site site = siteRepository.findById(id).orElseThrow();
+        site.setStatus(Status.FAILED);
+        site.setLastError(errorMessage);
+        site.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
+        siteRepository.save(site);
+    }
+
+    @Transactional
+    private void saveIndexedSite(Site indexingSite) {
+        int id = indexingSite.getId();
+        Site site = siteRepository.findById(id).orElseThrow();
+        site.setStatus(Status.INDEXED);
+        site.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
+        siteRepository.save(site);
     }
 }

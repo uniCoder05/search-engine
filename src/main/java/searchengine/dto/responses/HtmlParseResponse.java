@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.jsoup.nodes.Document;
+import searchengine.model.Page;
 
 import java.util.Set;
 
@@ -11,7 +12,6 @@ import java.util.Set;
 @Setter
 @NoArgsConstructor
 public class HtmlParseResponse {
-    private int statusCode;
-    private Document document;
+    private  Page page;    
     private Set<String> internalLinks;
 }
