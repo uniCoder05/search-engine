@@ -27,7 +27,8 @@ public class PageIndexerServiceImpl implements PageIndexerService {
     private final IndexRepository indexSearchRepository;
 
     @Override
-    public void indexHtml(String html, Page indexingPage) {
+    public void indexHtml(Page indexingPage) {
+        String html = indexingPage.getPageContent();
         long start = System.currentTimeMillis();
         try {
             Map<String, Integer> lemmas = lemmaService.getLemmasFromText(html);
@@ -40,7 +41,8 @@ public class PageIndexerServiceImpl implements PageIndexerService {
     }
 
     @Override
-    public void refreshIndex(String html, Page refreshPage) {
+    public void refreshIndex(Page refreshPage) {
+        String html = refreshPage.getPageContent();
         long start = System.currentTimeMillis();
         try {
             Map<String, Integer> lemmas = lemmaService.getLemmasFromText(html);

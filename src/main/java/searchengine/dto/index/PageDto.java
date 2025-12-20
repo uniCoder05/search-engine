@@ -4,7 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import searchengine.model.SitePage;
+import searchengine.model.Site;
 
 @Setter
 @Getter
@@ -13,5 +13,5 @@ import searchengine.model.SitePage;
 public class PageDto {
     private String url;
     private String rootUrl;
-    private SitePage site;
+    private Site site;
 }

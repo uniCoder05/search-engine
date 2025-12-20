@@ -4,9 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import searchengine.config.ConfigConnection;
-import searchengine.config.Site;
-import searchengine.config.SitesList;
-import searchengine.model.SitePage;
+import searchengine.config.SiteConfig;
+import searchengine.config.ListSiteConfig;
+import searchengine.model.Site;
 import searchengine.model.Status;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
@@ -26,11 +26,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequiredArgsConstructor
 @Slf4j
 public class ApiServiceImpl implements ApiService {
+    private static final ForkJoinPool FORK_JOIN_POOL = ForkJoinPool.commonPool();
+
     private final PageIndexerService pageIndexerService;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
-    private final SitesList sitesToIndexing;
-    private final Set<SitePage> sitePagesAllFromDB;
+    private final ListSiteConfig sitesToIndexing;
+    private final Set<Site> sitePagesAllFromDB;
     private final ConfigConnection configConnection;
     private AtomicBoolean indexingProcessing;
 
@@ -49,8 +51,8 @@ public class ApiServiceImpl implements ApiService {
     }
 
     @Override
-    public void refreshPage(SitePage siteDomain, URL url) {
-        SitePage existSitePage = siteRepository.getSitePageByUrl(siteDomain.getUrl());
+    public void refreshPage(Site siteDomain, URL url) {
+        Site existSitePage = siteRepository.getSitePageByUrl(siteDomain.getUrl());
         siteDomain.setId(existSitePage.getId());
         try {
             log.info("Запущена переиндексация страницы:{}", url.toString());
@@ -60,21 +62,21 @@ public class ApiServiceImpl implements ApiService {
             configConnection, pageIndexerService, indexingProcessing);
             pageFinder.refreshPage();
         } catch (SecurityException ex) {
-            SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
+            Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
             sitePage.setStatus(Status.FAILED);
             sitePage.setLastError(ex.getMessage());
             siteRepository.save(sitePage);
         }
         log.info("Проиндексирован сайт: {}", siteDomain.getName());
-        SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
+        Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
         sitePage.setStatus(Status.INDEXED);
         siteRepository.save(sitePage);
     }
 
     private void deleteSitePagesAndPagesInDB() {
-        List<SitePage> sitesFromDB = siteRepository.findAll();
-        for (SitePage sitePageDb : sitesFromDB) {
-            for (Site siteApp : sitesToIndexing.getSites()) {
+        List<Site> sitesFromDB = siteRepository.findAll();
+        for (Site sitePageDb : sitesFromDB) {
+            for (SiteConfig siteApp : sitesToIndexing.getSites()) {
                 if (sitePageDb.getUrl().equals(siteApp.getUrl().toString())) {
                     siteRepository.deleteById(sitePageDb.getId());
                 }
@@ -83,8 +85,8 @@ public class ApiServiceImpl implements ApiService {
     }
 
     private void addSitePagesToDB() {
-        for (Site siteApp : sitesToIndexing.getSites()) {
-            SitePage sitePageDAO = new SitePage();
+        for (SiteConfig siteApp : sitesToIndexing.getSites()) {
+            Site sitePageDAO = new Site();
             sitePageDAO.setStatus(Status.INDEXING);
             sitePageDAO.setName(siteApp.getName());
             sitePageDAO.setUrl(siteApp.getUrl().toString());
@@ -96,13 +98,13 @@ public class ApiServiceImpl implements ApiService {
     private void indexAllSitePages() throws InterruptedException {
         sitePagesAllFromDB.addAll(siteRepository.findAll());
         List<String> urlToIndexing = new ArrayList<>();
-        for (Site siteApp : sitesToIndexing.getSites()) {
+        for (SiteConfig siteApp : sitesToIndexing.getSites()) {
             urlToIndexing.add(siteApp.getUrl().toString());
         }
         sitePagesAllFromDB.removeIf(sitePage -> !urlToIndexing.contains(sitePage.getUrl()));
 
         List<Thread> indexingThreadList = new ArrayList<>();
-        for (SitePage siteDomain : sitePagesAllFromDB) {
+        for (Site siteDomain : sitePagesAllFromDB) {
             Runnable indexSite = () -> {
                 try {
                     log.info("Запущена индексация {}", siteDomain.getUrl());
@@ -112,20 +114,20 @@ public class ApiServiceImpl implements ApiService {
                             configConnection, pageIndexerService,
                             indexingProcessing));
                 } catch (SecurityException ex) {
-                    SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
+                    Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
                     sitePage.setStatus(Status.FAILED);
                     sitePage.setLastError(ex.getMessage());
                     siteRepository.save(sitePage);
                 }
                 if (!indexingProcessing.get()) {
                     log.warn("Indexing stopped by user, site:" + siteDomain.getUrl());
-                    SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
+                    Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
                     sitePage.setStatus(Status.FAILED);
                     sitePage.setLastError("Indexing stopped by user");
                     siteRepository.save(sitePage);
                 } else {
                     log.info("Проиндексирован сайт: {}", siteDomain.getUrl());
-                    SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
+                    Site sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
                     sitePage.setStatus(Status.INDEXED);
                     siteRepository.save(sitePage);
                 }

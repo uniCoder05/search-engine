@@ -1,6 +1,6 @@
 package searchengine.services;
 
-import searchengine.model.SitePage;
+import searchengine.model.Site;
 
 import java.net.URL;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -8,5 +8,5 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public interface ApiService {
     void startIndexing(AtomicBoolean indexingProcessing);
 
-    void refreshPage(SitePage sitePage, URL url);
+    void refreshPage(Site sitePage, URL url);
 }

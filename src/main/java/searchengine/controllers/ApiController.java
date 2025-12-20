@@ -4,11 +4,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import searchengine.config.SitesList;
+import searchengine.config.ListSiteConfig;
 import searchengine.dto.responses.NotOkResponse;
 import searchengine.dto.responses.OkResponse;
 import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.model.SitePage;
+import searchengine.model.Site;
 import searchengine.services.ApiService;
 import searchengine.services.SearchService;
 import searchengine.services.StatisticsService;
@@ -28,7 +28,7 @@ public class ApiController {
     private final StatisticsService statisticsService;
     private final ApiService apiService;
     private final AtomicBoolean indexingProcessing = new AtomicBoolean(false);
-    private final SitesList sitesList;
+    private final ListSiteConfig sitesList;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @GetMapping("/statistics")
@@ -62,7 +62,7 @@ public class ApiController {
     @PostMapping("/indexPage")
     public ResponseEntity indexPage(@RequestParam String url) throws IOException {
         URL refUrl = new URL(url);
-        SitePage sitePage = new SitePage();
+        Site sitePage = new Site();
         try {
             sitesList.getSites().stream().filter(site -> refUrl.getHost().equals(site.getUrl().getHost())).findFirst().map(site -> {
                 sitePage.setName(site.getName());

@@ -18,3 +18,9 @@ public class SearchDataResponse {
     @JsonIgnore
     private int wordsFound;
 }
+/*
+uri
+title
+snippet
+relevance
+ */

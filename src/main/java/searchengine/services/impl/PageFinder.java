@@ -6,27 +6,31 @@ import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import searchengine.config.ConfigConnection;
 import searchengine.model.Page;
-import searchengine.model.SitePage;
+import searchengine.model.Site;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 import searchengine.services.PageIndexerService;
 
+import javax.net.ssl.SSLHandshakeException;
 import java.net.URI;
+import java.net.URISyntaxException;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
 public class PageFinder extends RecursiveAction {
     private static final String MASK = "[^#?.]+";
 
-    private final SitePage siteDomain;
+    private final Site site;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final PageIndexerService pageIndexerService;
@@ -36,24 +40,25 @@ public class PageFinder extends RecursiveAction {
     private final Set<String> visitedLinks;
     private final String mask;
 
-    public PageFinder(SitePage siteDomain,
+    public PageFinder(Site site,
                       SiteRepository siteRepository, PageRepository pageRepository,
                       ConfigConnection configConnection,
                       PageIndexerService pageIndexerService,
                       AtomicBoolean indexingProcessing) {
+        String url = site.getUrl();
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
-        this.urlPage = siteDomain.getUrl();
+        this.urlPage = url;
         this.configConnection = configConnection;
         this.indexingProcessing = indexingProcessing;
-        this.siteDomain = siteDomain;
+        this.site = site;
         this.pageIndexerService = pageIndexerService;
-        this.mask = siteDomain.getUrl() + MASK;
+        this.mask = url + MASK;
         this.visitedLinks = ConcurrentHashMap.newKeySet();
     }
 
     private PageFinder(PageFinder pageFinder, String url) {
-        this.siteDomain = pageFinder.siteDomain;
+        this.site = pageFinder.site;
         this.siteRepository = pageFinder.siteRepository;
         this.pageRepository = pageFinder.pageRepository;
         this.urlPage = url;
@@ -66,6 +71,12 @@ public class PageFinder extends RecursiveAction {
 
     @Override
     protected void compute() {
+        if(!indexingProcessing.get()) {
+            return;
+        }
+        if(!visitedLinks.add(urlPage)) {
+            return;
+        }
         Set<PageFinder> subTasks = new HashSet<>();
         crawl(subTasks);
         for (PageFinder task : subTasks) {
@@ -77,98 +88,82 @@ public class PageFinder extends RecursiveAction {
     }
 
     public void crawl(Set<PageFinder> subTasks) {
-        if (visitedLinks.contains(urlPage) || !indexingProcessing.get()) {
+        pause(100, 300);
+        if (!indexingProcessing.get()) {
             return;
         }
-        visitedLinks.add(urlPage);
+
         Page indexingPage = new Page();
-        indexingPage.setSite(siteDomain);
-        String path = "";
-        String content = "";
-        int statusCode = 0;
+        indexingPage.setSite(site);
         try {
-            pause(150, 300);
-            path = new URI(urlPage).getPath();
+            String path = new URI(urlPage).getPath();
             indexingPage.setPath(path);
             Connection connection = getConnection(urlPage);
             var response = connection.execute();
-            statusCode = response.statusCode();
-                Document document = connection
-                        .timeout(20_000)
-                        .get();
-                content = getContent(document);//Даже если контент пустой, всё равно сохраняем и идём дальше
-                Elements links = document.getElementsByTag("a");
-                Set<String> urlSet = new HashSet<>(); //Собираем все ссылки на странице
-                for (Element link : links) {
-                    String absLink = link.attr("abs:href");
-                    if (isValidLink(absLink)) {
-                        urlSet.add(absLink);
-                    }
+            indexingPage.setAnswerCode(response.statusCode());
+            Document document = response.parse();
+            indexingPage.setPageContent(getContent(document));
+            Set<String> urlSet = getInnerLinks(document);
+
+            for (String url : urlSet) {
+                if(!indexingProcessing.get()) {
+                    return;
                 }
-                for (String url : urlSet) { // Отправляем найденные ссылки в crawl задачи
-                    if (visitedLinks.contains(url) || !indexingProcessing.get()) {
-                        return;
-                    }
-                    PageFinder task = new PageFinder(this, url);
-                    task.fork();
-                    subTasks.add(task);
+                PageFinder task = new PageFinder(this, url);
+                task.fork();
+                subTasks.add(task);
             }
-        } catch (HttpStatusException e) {
-            statusCode = e.getStatusCode();
-            log.info("HttpStatusException code:{} for url: {}", urlPage, e.getStatusCode());
         } catch (Exception ex) {
-            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, statusCode, ex.getMessage());
+            indexingPage.setAnswerCode(getErrorCodeFromException(ex));
+            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, indexingPage.getAnswerCode(), ex.getMessage());
         } finally {
-            if (!content.isBlank() && statusCode == 200) {
-                indexingPage.setAnswerCode(statusCode);
-                indexingPage.setPath(path);
-                pageRepository.save(indexingPage);
-                pageIndexerService.indexHtml(content, indexingPage);
+            pageRepository.save(indexingPage);
+            if(shouldIndexPage(indexingPage)) {
+                log.info("Indexing page url: {}", urlPage);
+                pageIndexerService.indexHtml(indexingPage);
                 updateSite();
-            } else {
-                log.warn("Skipped saving page: {} (status: {})", urlPage, statusCode);
             }
         }
+
+    }
+
+    private Set<String> getInnerLinks(Document document) {
+        Elements links = document.select("a[href]");
+        return links.stream()
+                .map(link -> link.attr("abs:href"))
+                .filter(this::isValidLink)
+                .collect(Collectors.toSet());
+    }
+
+    private boolean shouldIndexPage(Page page) {
+        return page.getAnswerCode() == 200
+                && !page.getPageContent().isBlank()
+                && indexingProcessing.get();
     }
 
     public void refreshPage() {
 
-        Page refreshPage = Optional.ofNullable(pageRepository.findPageBySiteIdAndPath(siteDomain.getId(), urlPage))
+        Page refreshPage = Optional.ofNullable(pageRepository.findPageBySiteIdAndPath(site.getId(), urlPage))
                 .orElse(new Page());
+        refreshPage.setSite(site);
 
-        String content = "";
-        int statusCode = 0;
-        String path = "";
         try {
-            path = new URI(urlPage).getPath();
+            String path = new URI(urlPage).getPath();
+            refreshPage.setPath(path);
             Connection connection = getConnection(urlPage);
             var response = connection.execute();
-            statusCode = response.statusCode();
-            if (statusCode == 200) {
-                Document doc = connection
-                        .timeout(20_000)
-                        .get();
-                content = getContent(doc); //Даже если контент пустой, всё равно сохраняем и идём дальше
+            refreshPage.setAnswerCode(response.statusCode());
+            if (refreshPage.getAnswerCode() == 200) {
+                Document doc = response.parse();
+                refreshPage.setPageContent(getContent(doc));//Даже если контент пустой, всё равно сохраняем и идём дальше
             }
-//            if (indexingPage.getPageContent() == null || indexingPage.getPageContent().isEmpty() || indexingPage.getPageContent().isBlank()) {
-//                throw new Exception("Content of site id:" + indexingPage.getSite().getId() + ", page:" + indexingPage.getPath() + " is null or empty");
-//            }
-
-        } catch (HttpStatusException e) {
-            statusCode = e.getStatusCode();
-            log.info("HttpStatusException code {} for url {}", statusCode, urlPage);
         } catch (Exception ex) {
-            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, statusCode, ex.getMessage());
+            refreshPage.setAnswerCode(getErrorCodeFromException(ex));
+            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, refreshPage.getAnswerCode(), ex.getMessage());
         } finally {
-            if (refreshPage.getSite() == null) {
-                refreshPage.setSite(siteDomain);
-                refreshPage.setPath(path);
-            }
-            refreshPage.setPageContent(content);
-            refreshPage.setAnswerCode(statusCode);
             pageRepository.save(refreshPage);
             updateSite();
-            pageIndexerService.refreshIndex(content, refreshPage);
+            pageIndexerService.refreshIndex(refreshPage);
         }
     }
 
@@ -182,7 +177,7 @@ public class PageFinder extends RecursiveAction {
     }
 
     private String getContent(Document document) {
-        return document.text();
+        return document.html();
     }
 
     //Метод для проверки ссылки на валидность
@@ -193,7 +188,7 @@ public class PageFinder extends RecursiveAction {
         }
         //Проверка на соответствие маске url + любые символы, кроме ?.#
         if (!link.matches(mask)) {
-            log.info("link {} is invalid for mask {}", link, mask);
+//            log.info("link {} is invalid for mask {}", link, mask);
             return false;
         }
         //Проверка, ссылка на уникальность
@@ -205,7 +200,22 @@ public class PageFinder extends RecursiveAction {
     }
 
     private void updateSite() {
-        siteRepository.save(siteDomain);
+        site.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
+    }
+
+
+    private int getErrorCodeFromException(Exception e) {
+        if (e instanceof HttpStatusException) {
+            return ((HttpStatusException) e).getStatusCode();
+        } else if (e instanceof SSLHandshakeException) {
+            return 525;
+        } else if (e.getMessage().contains("timeout")) {
+            return 408;
+        } else if (e instanceof URISyntaxException) {
+            return 404;
+        } else {
+            return -1;
+        }
     }
 
     private void pause(int min, int max)  {
@@ -218,31 +228,4 @@ public class PageFinder extends RecursiveAction {
             indexingProcessing.set(false);
         }
     }
-
-//    void errorHandling(Exception ex, Page indexingPage) {
-//        String message = ex.toString();
-//        int errorCode;
-//        if (message.contains("UnsupportedMimeTypeException")) {
-//            errorCode = 415;    // Ссылка на pdf, jpg, png документы
-//        } else if (message.contains("Status=401")) {
-//            errorCode = 401;    // На несуществующий домен
-//        } else if (message.contains("UnknownHostException")) {
-//            errorCode = 401;
-//        } else if (message.contains("Status=403")) {
-//            errorCode = 403;    // Нет доступа, 403 Forbidden
-//        } else if (message.contains("Status=404")) {
-//            errorCode = 404;    // // Ссылка на pdf-документ, несущ. страница, проигрыватель
-//        } else if (message.contains("Status=500")) {
-//            errorCode = 401;    // Страница авторизации
-//        } else if (message.contains("ConnectException: Connection refused")) {
-//            errorCode = 500;    // ERR_CONNECTION_REFUSED, не удаётся открыть страницу
-//        } else if (message.contains("SSLHandshakeException")) {
-//            errorCode = 525;
-//        } else if (message.contains("Status=503")) {
-//            errorCode = 503; // Сервер временно не имеет возможности обрабатывать запросы по техническим причинам (обслуживание, перегрузка и прочее).
-//        } else {
-//            errorCode = -1;
-//        }
-//        indexingPage.setAnswerCode(errorCode);
-//    }
 }

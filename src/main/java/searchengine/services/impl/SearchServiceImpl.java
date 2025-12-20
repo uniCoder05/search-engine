@@ -10,12 +10,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import searchengine.dto.RankDto;
 import searchengine.dto.responses.NotOkResponse;
-import searchengine.dto.responses.OkResponse;
 import searchengine.dto.responses.SearchDataResponse;
 import searchengine.dto.responses.SearchResponse;
 import searchengine.model.Index;
 import searchengine.model.Lemma;
-import searchengine.model.SitePage;
+import searchengine.model.Site;
 import searchengine.model.Status;
 import searchengine.repository.IndexRepository;
 import searchengine.repository.LemmaRepository;
@@ -50,7 +49,7 @@ public class SearchServiceImpl implements SearchService {
             return ResponseEntity.badRequest().body(new NotOkResponse("Индексация сайта для поиска не закончена"));
         }
         //
-        SitePage siteTarget = siteRepository.getSitePageByUrl(site);
+        Site siteTarget = siteRepository.getSitePageByUrl(site);
         Integer countPages = siteTarget != null ? pageRepository.getCountPages(siteTarget.getId()) : pageRepository.getCountPages(null);
 
         //Exclusion lemmas by frequent
@@ -136,7 +135,7 @@ public class SearchServiceImpl implements SearchService {
                     }
                 }
                 if (searchWords != 0) {
-                    SitePage sitePage = siteRepository.findById(pageRepository.findById(rank.getPageId()).get().getSite().getId()).get();
+                    Site sitePage = siteRepository.findById(pageRepository.findById(rank.getPageId()).get().getSite().getId()).get();
                     searchDataResponses.add(new SearchDataResponse(
                             sitePage.getUrl(),
                             sitePage.getName(),
@@ -164,7 +163,7 @@ public class SearchServiceImpl implements SearchService {
 
     private Boolean checkIndexStatusNotIndexed(String site) {
         if (site == null || site.isBlank()) {
-            List<SitePage> sites = siteRepository.findAll();
+            List<Site> sites = siteRepository.findAll();
             return sites.stream().anyMatch(s -> !s.getStatus().equals(indexSuccessStatus));
         }
         return !siteRepository.getSitePageByUrl(site).getStatus().equals(indexSuccessStatus);

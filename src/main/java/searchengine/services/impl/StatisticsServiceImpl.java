@@ -2,13 +2,13 @@ package searchengine.services.impl;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import searchengine.config.Site;
-import searchengine.config.SitesList;
+import searchengine.config.SiteConfig;
+import searchengine.config.ListSiteConfig;
 import searchengine.dto.statistics.DetailedStatisticsItem;
 import searchengine.dto.statistics.StatisticsData;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.dto.statistics.TotalStatistics;
-import searchengine.model.SitePage;
+import searchengine.model.Site;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
@@ -23,14 +23,14 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class StatisticsServiceImpl implements StatisticsService {
-    private final SitesList sites;
+    private final ListSiteConfig sites;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
 
     @Override
     public StatisticsResponse getStatistics() throws MalformedURLException {
-        List<SitePage> sitePages = siteRepository.findAll();
+        List<Site> sitePages = siteRepository.findAll();
         if (sitePages.isEmpty()) {
             return getStartStatistics();
         }
@@ -39,9 +39,9 @@ public class StatisticsServiceImpl implements StatisticsService {
         total.setIndexing(true);
 
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
-        List<SitePage> sites = siteRepository.findAll();
-        for (SitePage sitePage : sites) {
-            Site site = new Site();
+        List<Site> sites = siteRepository.findAll();
+        for (Site sitePage : sites) {
+            SiteConfig site = new SiteConfig();
             site.setName(sitePage.getName());
             site.setUrl(new URL(sitePage.getUrl()));
             DetailedStatisticsItem item = new DetailedStatisticsItem();
@@ -72,7 +72,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         total.setSites(sites.getSites().size());
         total.setIndexing(false);
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
-        for (Site site : sites.getSites()) {
+        for (SiteConfig site : sites.getSites()) {
             DetailedStatisticsItem item = new DetailedStatisticsItem();
             item.setName(site.getName());
             item.setUrl(String.valueOf(site.getUrl()));
