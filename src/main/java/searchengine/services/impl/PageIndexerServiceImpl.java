@@ -32,8 +32,8 @@ public class PageIndexerServiceImpl implements PageIndexerService {
         long start = System.currentTimeMillis();
         try {
             Map<String, Integer> lemmas = lemmaService.getLemmasFromText(html);
-            lemmas.entrySet().parallelStream().forEach(entry -> saveLemma(entry.getKey(), entry.getValue(), indexingPage));
-            log.debug("Индексация страницы {} lemmas: {}", (System.currentTimeMillis() - start), lemmas.size());
+            saveLemmasForPage(lemmas, indexingPage);
+            log.debug("Лемматизация страницы завершена за {} мс количество найденных лемм: {}", (System.currentTimeMillis() - start), lemmas.size());
         } catch (IOException e) {
             log.error(String.valueOf(e));
             throw new RuntimeException(e);
@@ -51,8 +51,8 @@ public class PageIndexerServiceImpl implements PageIndexerService {
             //удаление индекса
             indexSearchRepository.deleteAllByPageId(refreshPage.getId());
             //обновление лемм и индексов у обновленной страницы
-            lemmas.entrySet().parallelStream().forEach(entry -> saveLemma(entry.getKey(), entry.getValue(), refreshPage));
-            log.debug("Обновление индекса страницы {} lemmas: {}",(System.currentTimeMillis() - start), lemmas.size());
+            saveLemmasForPage(lemmas, refreshPage);
+            log.debug("Лемматизация страницы обновлена за {} мс количество найденных лемм: {}", (System.currentTimeMillis() - start), lemmas.size());
         } catch (IOException e) {
             log.error(String.valueOf(e));
             throw new RuntimeException(e);
@@ -72,23 +72,23 @@ public class PageIndexerServiceImpl implements PageIndexerService {
     }
 
     @Transactional
-    private void saveLemma(String k, Integer v, Page indexingPage) {
-        Lemma existLemmaInDB = lemmaRepository.lemmaExist(k, indexingPage.getSite().getId());
+    private void saveLemma(String lemma, Integer rank, Page indexingPage) {
+        Lemma existLemmaInDB = lemmaRepository.lemmaExist(lemma, indexingPage.getSite().getId());
         if (existLemmaInDB != null) {
-            existLemmaInDB.setFrequency(existLemmaInDB.getFrequency() + v);
+            existLemmaInDB.setFrequency(existLemmaInDB.getFrequency() + rank);
             lemmaRepository.saveAndFlush(existLemmaInDB);
-            createIndex(indexingPage, existLemmaInDB, v);
+            createIndex(indexingPage, existLemmaInDB, rank);
         } else {
             try {
                 Lemma newLemmaToDB = new Lemma();
                 newLemmaToDB.setSite(indexingPage.getSite());
-                newLemmaToDB.setLemma(k);
-                newLemmaToDB.setFrequency(v);
+                newLemmaToDB.setLemma(lemma);
+                newLemmaToDB.setFrequency(rank);
                 lemmaRepository.saveAndFlush(newLemmaToDB);
-                createIndex(indexingPage, newLemmaToDB, v);
+                createIndex(indexingPage, newLemmaToDB, rank);
             } catch (DataIntegrityViolationException ex) {
                 log.debug("Ошибка при сохранении леммы, такая лемма уже существует. Вызов повторного сохранения");
-                saveLemma(k, v, indexingPage);
+                saveLemma(lemma, rank, indexingPage);
             }
         }
     }
@@ -107,5 +107,10 @@ public class PageIndexerServiceImpl implements PageIndexerService {
             index.setPage(indexingPage);
             indexSearchRepository.save(index);
         }
+    }
+
+    private void saveLemmasForPage(Map<String, Integer> lemmas, Page page) {
+        lemmas.entrySet().parallelStream()
+                .forEach(entry -> saveLemma(entry.getKey(), entry.getValue(), page));
     }
 }
