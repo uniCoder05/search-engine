@@ -7,18 +7,16 @@ import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
+import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.ConfigConnection;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.repository.PageRepository;
-import searchengine.repository.SiteRepository;
 import searchengine.services.PageIndexerService;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RecursiveAction;
@@ -122,20 +120,47 @@ public class PageFinder extends RecursiveAction {
 
     }
 
-    public void refreshPage(String urlPage) {
-        Page refreshPage = pageRepository.findPageBySiteIdAndPath(site.getId(), urlPage);
-
+    @Transactional
+    public void refreshPage(String urlPage) throws URISyntaxException {
+        log.info("urlPage0: {}", urlPage);
+        URI uri = new URI(urlPage);
+        log.info("urlPage01: {}", urlPage);
+        String path =  uri.getPath() != null ? uri.getPath(): "/";
+        log.info("urlPage02: '{}' site id: '{}' path: '{}'", urlPage, site.getId(), path);
+        Page refreshPage = new Page();
         try {
-            Connection connection = getConnection(urlPage);
-            var response = connection.execute();
-            refreshPage.setAnswerCode(response.statusCode());
-            Document doc = response.parse();
-            refreshPage.setPageContent(getContent(doc));
-        } catch (Exception ex) {
-            refreshPage.setAnswerCode(getErrorCodeFromException(ex));
-            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, refreshPage.getAnswerCode(), ex.getMessage());
+            Optional<Page> result = pageRepository.getPageBySiteIdAndPath(site.getId(), path);
+            log.info("urlPage03: {}", urlPage);
+            result.ifPresent(page -> {
+                log.info("PAGE FOUND IN DB");
+            });
+        } catch(Exception e) {
+            log.info("SQL query exception {}, cause {}", e.getMessage(), e.getCause().toString());
+
         }
 
+
+//        Page refreshPage = new Page();
+        log.info("urlPage04: {}", urlPage);
+        try {
+            Connection connection = getConnection(urlPage);
+            log.info("urlPage1: {}", urlPage);
+            var response = connection.execute();
+            log.info("urlPage2: {}", urlPage);
+            refreshPage.setAnswerCode(response.statusCode());
+            log.info("urlPage3: {}", urlPage);
+            Document doc = response.parse();
+            log.info("urlPage4: {}", urlPage);
+            refreshPage.setPageContent(getContent(doc));
+            log.info("urlPage5: {}", urlPage);
+        } catch (Exception ex) {
+            log.info("REFRESH PAGE is : {}", refreshPage);
+            log.info("urlPage exception: {} message: {}", urlPage, ex.getMessage());
+            refreshPage.setAnswerCode(getErrorCodeFromException(ex));
+            refreshPage.setPageContent("");
+            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, refreshPage.getAnswerCode(), ex.getMessage());
+        }
+        log.info("urlPage7: {}", urlPage);
         pageRepository.save(refreshPage);
         pageIndexerService.refreshIndex(refreshPage);
     }
@@ -167,18 +192,14 @@ public class PageFinder extends RecursiveAction {
         return document.html();
     }
 
-    //Метод для проверки ссылки на валидность
     private boolean isValidLink(String link) {
-        //Проверка на пустоту
         if (link.isBlank()) {
             return false;
         }
-        //Проверка на соответствие маске url + любые символы, кроме ?.#
         if (!link.matches(mask)) {
 //            log.info("link {} is invalid for mask {}", link, mask);
             return false;
         }
-        //Проверка, ссылка на уникальность
         if (visitedLinks.contains(link)) {
             return false;
         }

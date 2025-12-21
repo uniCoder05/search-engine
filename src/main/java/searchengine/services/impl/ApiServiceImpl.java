@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.ConfigConnection;
 import searchengine.config.SiteConfig;
 import searchengine.config.ListSiteConfig;
+import searchengine.exception.UrlNotInSiteListException;
 import searchengine.model.Site;
 import searchengine.model.Status;
 import searchengine.repository.PageRepository;
@@ -14,7 +15,8 @@ import searchengine.repository.SiteRepository;
 import searchengine.services.ApiService;
 import searchengine.services.PageIndexerService;
 
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -48,23 +50,6 @@ public class ApiServiceImpl implements ApiService {
             indexingProcessing.set(false);
             log.error("Error: ", ex);
         }
-    }
-
-    @Override
-    public void refreshPage(Site site, URL url) {
-        Site existSite = siteRepository.getSiteByUrl(site.getUrl());
-        site.setId(existSite.getId());
-        try {
-            log.info("Запущена переиндексация страницы:{}", url.toString());
-            PageFinder pageFinder = new PageFinder(site,
-                    pageRepository,
-            configConnection, pageIndexerService, indexingProcessing);
-            pageFinder.refreshPage(url.toString());
-        } catch (SecurityException ex) {
-            handleIndexingError(site, ex.getMessage());
-        }
-        log.info("Проиндексирован сайт: {}", site.getName());
-        saveIndexedSite(site);
     }
 
     private void indexAllSite() throws InterruptedException {
@@ -101,10 +86,65 @@ public class ApiServiceImpl implements ApiService {
         indexingProcessing.set(false);
     }
 
+    @Override
+    public void refreshPage(String urlPage) throws URISyntaxException {
+        if (!isValidUrlPage(urlPage)) {
+            log.info("not valid urlPage: {}", urlPage );
+            throw new UrlNotInSiteListException();
+        }
+        Site site = new Site();
+        URI uri = new URI(urlPage);
+        String path = uri.getPath();
+        String siteUrl = urlPage.replace(path, "/");
+        Site existSite = siteRepository.getSiteByUrl(siteUrl);
+        site.setId(existSite.getId());
+        site.setUrl(existSite.getUrl());
+        try {
+            log.info("Запущена переиндексация страницы: {}", urlPage);
+            PageFinder pageFinder = new PageFinder(site,
+                    pageRepository,
+                    configConnection, pageIndexerService, indexingProcessing);
+            pageFinder.refreshPage(urlPage);
+        } catch (SecurityException ex) {
+            log.info("Security Exception: {}", ex.getMessage());
+            handleIndexingError(site, ex.getMessage());
+        }
+        log.info("Проиндексирован сайт: {}", site.getName());
+        saveIndexedSite(site);
+    }
+
+    private boolean isValidUrlPage(String urlPage) {
+        if (urlPage.isBlank()) {
+            return false;
+        }
+
+        if (!isTrustedUrl(urlPage)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private List<String> getUrlsToIndexing() {
+        return sitesToIndexing.getSites().stream()
+                .map(siteConfig -> siteConfig.getUrl().toString())
+                .toList();
+    }
+
+    private boolean isTrustedUrl(String urlPage) {
+        for (String trustedUrl : getUrlsToIndexing()) {
+            if (urlPage.startsWith(trustedUrl)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     @Transactional
     private void resetAndSaveAllSites() {
         siteRepository.deleteAll();
-        for(SiteConfig siteConfig : sitesToIndexing.getSites()) {
+        for (SiteConfig siteConfig : sitesToIndexing.getSites()) {
             Site site = new Site();
             site.setStatus(Status.INDEXING);
             site.setName(siteConfig.getName());

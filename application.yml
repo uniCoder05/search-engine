@@ -6,13 +6,19 @@ spring:
     username: usr
     password: pwd
     url: jdbc:postgresql://localhost:5430/demoDB
+    hikari:
+      auto-commit: false
   jpa:
+    show-sql: true
     properties:
       hibernate:
-      dialect: org.hibernate.dialect.PostgreSQLDialect
-    hibernate:
-      ddl-auto: update
-    show-sql: false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        ddl-auto: update
+        format_sql: true
+        type:
+          descriptor:
+            sql:
+              BasicBinder: TRACE
   flyway:
     enabled: true
     baseline-on-migrate: true

@@ -1,6 +1,7 @@
 package searchengine.controllers;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,11 +16,13 @@ import searchengine.services.StatisticsService;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+@Slf4j
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
@@ -60,23 +63,26 @@ public class ApiController {
     }
 
     @PostMapping("/indexPage")
-    public ResponseEntity indexPage(@RequestParam String url) throws IOException {
-        URL refUrl = new URL(url);
-        Site site = new Site();
+    public ResponseEntity indexPage(@RequestParam String url) throws IOException, URISyntaxException {
+//        URL refUrl = new URL(url);
+//        Site site = new Site();
         try {
-            sitesList.getSites().stream()
-                    .filter(siteConfig -> refUrl.getHost().equals(siteConfig.getUrl().getHost()))
-                    .findFirst()
-                    .map(siteConfig -> {
-                site.setName(site.getName());
-                site.setUrl(siteConfig.getUrl().toString());
-                return site;
-            }).orElseThrow();
+            log.info("Передан на индексацию url: {}", url);
+            apiService.refreshPage(url);
+//            sitesList.getSites().stream()
+//                    .filter(siteConfig -> refUrl.getHost().equals(siteConfig.getUrl().getHost()))
+//                    .findFirst()
+//                    .map(siteConfig -> {
+//                site.setName(siteConfig.getName());
+//                site.setUrl(siteConfig.getUrl().toString());
+//                return site;
+//            }).orElseThrow();
         } catch (RuntimeException ex) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).
                     body(new NotOkResponse("Данная страница находится за пределами сайтов указанных в конфигурационном файле"));
         }
-        apiService.refreshPage(site, refUrl);
+
+
         return ResponseEntity.status(HttpStatus.OK).body(new OkResponse());
     }
 
