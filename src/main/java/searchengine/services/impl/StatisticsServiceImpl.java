@@ -40,7 +40,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
 
         for(Site site : sites) {
-            var item = createDetailedStatisticsItemFromSite(site);
+            var item = createDetailedItemFromSite(site);
             total.setPages(total.getPages() + item.getPages());
             total.setLemmas(total.getLemmas() + item.getLemmas());
             detailed.add(item);
@@ -56,7 +56,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         return response;
     }
 
-    private DetailedStatisticsItem createDetailedStatisticsItemFromSite(Site site) {
+    private DetailedStatisticsItem createDetailedItemFromSite(Site site) {
         DetailedStatisticsItem item = new DetailedStatisticsItem();
         int siteId = site.getId();
         int pageCount = pageRepository.findCountRecordBySiteId(siteId);
@@ -80,7 +80,7 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         List<SiteConfig> sites = sitesConfig.getSites();
         List<DetailedStatisticsItem> detailed = sites.stream()
-                .map(this::getInitialDetailed)
+                .map(this::createDetailedItemFromSiteConfig)
                 .toList();
 
         data.setTotal(total);
@@ -92,7 +92,7 @@ public class StatisticsServiceImpl implements StatisticsService {
         return response;
     }
 
-    private DetailedStatisticsItem getInitialDetailed(SiteConfig siteConfig) {
+    private DetailedStatisticsItem createDetailedItemFromSiteConfig(SiteConfig siteConfig) {
         var item = new DetailedStatisticsItem();
         item.setName(siteConfig.getName());
         item.setUrl(String.valueOf(siteConfig.getUrl()));

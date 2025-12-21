@@ -9,69 +9,79 @@ import org.springframework.stereotype.Service;
 import searchengine.services.LemmaService;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class LemmaServiceImpl implements LemmaService {
-    private LuceneMorphology luceneMorphology;
+    private static final Set<String> FUNCTIONAL_POS = Set.of("МЕЖД", "ПРЕДЛ", "СОЮЗ", "ЧАСТ");
 
-    {
+    private final LuceneMorphology luceneMorphology;
+
+    public LemmaServiceImpl() {
         try {
-            luceneMorphology = new RussianLuceneMorphology();
+            this.luceneMorphology = new RussianLuceneMorphology();
         } catch (IOException e) {
-            e.printStackTrace();
+            throw new RuntimeException("Не удалось инициализировать RussianLuceneMorphology", e);
         }
     }
 
     @Override
     public Map<String, Integer> getLemmasFromText(String html) {
-        Map<String, Integer> lemmasInText = new HashMap<>();
+        String rawText = Jsoup.parse(html).text();
 
-        String text = Jsoup.parse(html).text();
-        List<String> words = new ArrayList<>(List.of(text.toLowerCase().split("[^a-zа-я]+")));
-        words.forEach(w -> determineLemma(w, lemmasInText));
-        return lemmasInText;
+        return Arrays.stream(getPreparedWordsArray(rawText))
+                .filter(this::isValidWord)
+                .map(this::getLemmaByWord)
+                .filter(lemma -> !lemma.isEmpty())
+                .collect(Collectors.toMap(
+                        lemma -> lemma, //key
+                        lemma -> 1, //value
+                        Integer::sum //if value already exists
+                ));
     }
 
     @Override
     public String getLemmaByWord(String word) {
-        String preparedWord = word.toLowerCase();
-        if (checkMatchWord(preparedWord)) return "";
+        if (isWrongWord(word)) {
+            return "";
+        }
         try {
-            List<String> normalWordForms = luceneMorphology.getNormalForms(preparedWord);
-            String wordInfo = luceneMorphology.getMorphInfo(preparedWord).toString();
-            if (checkWordInfo(wordInfo)) return "";
+            List<String> normalWordForms = luceneMorphology.getNormalForms(word);
+            if (normalWordForms.isEmpty()) {
+                return "";
+            }
+
+            String wordInfo = luceneMorphology.getMorphInfo(word).toString();
+            if (isFunctionalPartOfSpeech(wordInfo)) {
+                return "";
+            }
             return normalWordForms.get(0);
         } catch (WrongCharaterException ex) {
-            log.debug(ex.getMessage());
-        }
-        return "";
-    }
-
-    private void determineLemma(String word, Map<String, Integer> lemmasInText) {
-        try {
-            if (checkMatchWord(word)) {
-                return;
-            }
-            List<String> normalWordForms = luceneMorphology.getNormalForms(word);
-            String wordInfo = luceneMorphology.getMorphInfo(word).toString();
-            if (checkWordInfo(wordInfo)) return;
-            String normalWord = normalWordForms.get(0);
-            lemmasInText.put(normalWord, lemmasInText.containsKey(normalWord) ? (lemmasInText.get(normalWord) + 1) : 1);
-        } catch (RuntimeException ex) {
-            log.debug(ex.getMessage());
+            log.debug("Ошибка анализа слова '{}': {}", word, ex.getMessage());
+            return "";
         }
     }
 
-    private boolean checkMatchWord(String word) {
-        return word.isEmpty() || String.valueOf(word.charAt(0)).matches("[a-z]") || String.valueOf(word.charAt(0)).matches("[0-9]");
+    private String[] getPreparedWordsArray(String rawText) {
+        String rgx = "[^a-zа-яё]+"; //Для разбиения текста на слова по всему, что не является буквами
+        return rawText.toLowerCase().split(rgx);
     }
 
-    private boolean checkWordInfo(String wordInfo) {
-        return wordInfo.contains("ПРЕДЛ") || wordInfo.contains("СОЮЗ") || wordInfo.contains("МЕЖД");
+    private boolean isWrongWord(String word) {
+        return  word == null ||
+                word.isEmpty() ||
+                !word.matches("^[а-яА-ЯёЁ].*");//слово начинается на букву русского алфавита
+    }
+
+    private boolean isValidWord(String word) {
+        return !isWrongWord(word);
+    }
+
+    private boolean isFunctionalPartOfSpeech(String wordInfo) {
+
+        return FUNCTIONAL_POS.stream()
+                .anyMatch(pos -> wordInfo.toUpperCase().contains(pos));
     }
 }
