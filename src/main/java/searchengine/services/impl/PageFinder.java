@@ -122,47 +122,31 @@ public class PageFinder extends RecursiveAction {
 
     @Transactional
     public void refreshPage(String urlPage) throws URISyntaxException {
-        log.info("urlPage0: {}", urlPage);
         URI uri = new URI(urlPage);
-        log.info("urlPage01: {}", urlPage);
         String path =  uri.getPath() != null ? uri.getPath(): "/";
         log.info("urlPage02: '{}' site id: '{}' path: '{}'", urlPage, site.getId(), path);
         Page refreshPage = new Page();
+        refreshPage.setSite(site);
+        refreshPage.setPath(path);
+        refreshPage.setPageContent("");
         try {
             Optional<Page> result = pageRepository.getPageBySiteIdAndPath(site.getId(), path);
-            log.info("urlPage03: {}", urlPage);
-            result.ifPresent(page -> {
-                log.info("PAGE FOUND IN DB");
-            });
-        } catch(Exception e) {
-            log.info("SQL query exception {}, cause {}", e.getMessage(), e.getCause().toString());
-
-        }
-
-
-//        Page refreshPage = new Page();
-        log.info("urlPage04: {}", urlPage);
-        try {
+            result.ifPresent(page -> refreshPage.setId(page.getId()));
+            result.ifPresent(page -> pageRepository.deleteById(page.getId()));
             Connection connection = getConnection(urlPage);
-            log.info("urlPage1: {}", urlPage);
             var response = connection.execute();
-            log.info("urlPage2: {}", urlPage);
             refreshPage.setAnswerCode(response.statusCode());
-            log.info("urlPage3: {}", urlPage);
             Document doc = response.parse();
-            log.info("urlPage4: {}", urlPage);
             refreshPage.setPageContent(getContent(doc));
-            log.info("urlPage5: {}", urlPage);
         } catch (Exception ex) {
-            log.info("REFRESH PAGE is : {}", refreshPage);
             log.info("urlPage exception: {} message: {}", urlPage, ex.getMessage());
             refreshPage.setAnswerCode(getErrorCodeFromException(ex));
-            refreshPage.setPageContent("");
             log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, refreshPage.getAnswerCode(), ex.getMessage());
         }
-        log.info("urlPage7: {}", urlPage);
         pageRepository.save(refreshPage);
-        pageIndexerService.refreshIndex(refreshPage);
+        if(shouldIndexPage(refreshPage)) {
+            pageIndexerService.refreshIndex(refreshPage);
+        }
     }
 
     private Set<String> getInnerLinks(Document document) {

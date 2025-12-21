@@ -69,14 +69,7 @@ public class ApiController {
         try {
             log.info("Передан на индексацию url: {}", url);
             apiService.refreshPage(url);
-//            sitesList.getSites().stream()
-//                    .filter(siteConfig -> refUrl.getHost().equals(siteConfig.getUrl().getHost()))
-//                    .findFirst()
-//                    .map(siteConfig -> {
-//                site.setName(siteConfig.getName());
-//                site.setUrl(siteConfig.getUrl().toString());
-//                return site;
-//            }).orElseThrow();
+            log.info("Страница '{}' проиндексирована", url);
         } catch (RuntimeException ex) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).
                     body(new NotOkResponse("Данная страница находится за пределами сайтов указанных в конфигурационном файле"));

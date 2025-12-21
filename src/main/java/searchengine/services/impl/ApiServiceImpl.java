@@ -108,6 +108,8 @@ public class ApiServiceImpl implements ApiService {
         } catch (SecurityException ex) {
             log.info("Security Exception: {}", ex.getMessage());
             handleIndexingError(site, ex.getMessage());
+        } catch (Exception ex) {
+            log.info("Unexpected exception: {}", ex.getMessage());
         }
         log.info("Проиндексирован сайт: {}", site.getName());
         saveIndexedSite(site);
