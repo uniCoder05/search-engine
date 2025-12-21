@@ -21,16 +21,6 @@ CREATE TABLE IF NOT EXISTS page (
     UNIQUE (path, site_id)
 );
 
--- Таблица Index
-CREATE TABLE IF NOT EXISTS search_index (
-    id SERIAL PRIMARY KEY,
-    page_id INTEGER NOT NULL,
-    lemma_id INTEGER NOT NULL,
-    rank_value INTEGER NOT NULL,
-    FOREIGN KEY (page_id) REFERENCES page(id),
-    FOREIGN KEY (lemma_id) REFERENCES lemma(id)
-);
-
 -- Таблица Lemma
 CREATE TABLE IF NOT EXISTS lemma (
     id SERIAL PRIMARY KEY,
@@ -39,6 +29,16 @@ CREATE TABLE IF NOT EXISTS lemma (
     frequency INTEGER NOT NULL,
     FOREIGN KEY (site_id) REFERENCES site(id),
     UNIQUE (lemma_text, site_id)
+);
+
+-- Таблица Index
+CREATE TABLE IF NOT EXISTS search_index (
+    id SERIAL PRIMARY KEY,
+    page_id INTEGER NOT NULL,
+    lemma_id INTEGER NOT NULL,
+    rank_value INTEGER NOT NULL,
+    FOREIGN KEY (page_id) REFERENCES page(id),
+    FOREIGN KEY (lemma_id) REFERENCES lemma(id)
 );
 
 -- Индексы для оптимизации поиска

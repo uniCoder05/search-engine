@@ -9,7 +9,6 @@ import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.ConfigConnection;
-import searchengine.exception.InvalidWebLinkException;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.repository.PageRepository;
@@ -18,9 +17,7 @@ import searchengine.util.UrlValidator;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.net.MalformedURLException;
-import java.net.URI;
 import java.net.URISyntaxException;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RecursiveAction;

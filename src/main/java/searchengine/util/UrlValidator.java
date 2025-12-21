@@ -1,8 +1,6 @@
 package searchengine.util;
 
 
-import searchengine.exception.InvalidWebLinkException;
-
 import java.net.URI;
 import java.net.URL;
 

@@ -7,8 +7,6 @@ import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.ConfigConnection;
 import searchengine.config.SiteConfig;
 import searchengine.config.ListSiteConfig;
-import searchengine.dto.responses.IndexingResponse;
-import searchengine.exception.InvalidWebLinkException;
 import searchengine.exception.UrlNotInSiteListException;
 import searchengine.model.Site;
 import searchengine.model.Status;
@@ -18,9 +16,6 @@ import searchengine.services.ApiService;
 import searchengine.services.PageIndexerService;
 import searchengine.util.UrlValidator;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
