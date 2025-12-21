@@ -6,10 +6,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import searchengine.config.ListSiteConfig;
+import searchengine.dto.responses.IndexingResponse;
 import searchengine.dto.responses.NotOkResponse;
 import searchengine.dto.responses.OkResponse;
 import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.model.Site;
 import searchengine.services.ApiService;
 import searchengine.services.SearchService;
 import searchengine.services.StatisticsService;
@@ -17,7 +17,6 @@ import searchengine.services.StatisticsService;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
-import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -64,19 +63,15 @@ public class ApiController {
 
     @PostMapping("/indexPage")
     public ResponseEntity indexPage(@RequestParam String url) throws IOException, URISyntaxException {
-//        URL refUrl = new URL(url);
-//        Site site = new Site();
         try {
             log.info("Передан на индексацию url: {}", url);
             apiService.refreshPage(url);
-            log.info("Страница '{}' проиндексирована", url);
-        } catch (RuntimeException ex) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).
-                    body(new NotOkResponse("Данная страница находится за пределами сайтов указанных в конфигурационном файле"));
+        } catch (Exception ex) {
+            var response = new IndexingResponse(false, ex.getMessage());
+            return new ResponseEntity<>(response, HttpStatus.OK);
         }
 
-
-        return ResponseEntity.status(HttpStatus.OK).body(new OkResponse());
+        return new ResponseEntity<>(new OkResponse(), HttpStatus.OK);
     }
 
     @GetMapping("/search")

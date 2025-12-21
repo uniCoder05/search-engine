@@ -7,6 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.ConfigConnection;
 import searchengine.config.SiteConfig;
 import searchengine.config.ListSiteConfig;
+import searchengine.dto.responses.IndexingResponse;
+import searchengine.exception.InvalidWebLinkException;
 import searchengine.exception.UrlNotInSiteListException;
 import searchengine.model.Site;
 import searchengine.model.Status;
@@ -14,7 +16,9 @@ import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 import searchengine.services.ApiService;
 import searchengine.services.PageIndexerService;
+import searchengine.util.UrlValidator;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.Timestamp;
@@ -30,7 +34,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequiredArgsConstructor
 @Slf4j
 public class ApiServiceImpl implements ApiService {
-    private static final ForkJoinPool FORK_JOIN_POOL = ForkJoinPool.commonPool();
 
     private final PageIndexerService pageIndexerService;
     private final SiteRepository siteRepository;
@@ -64,17 +67,19 @@ public class ApiServiceImpl implements ApiService {
                             configConnection, pageIndexerService,
                             indexingProcessing));
                 } catch (SecurityException ex) {
-                    handleIndexingError(site, ex.getMessage());
+                    indexErrorHandler(site, ex.getMessage());
                 } catch (Exception ex) {
-                    handleIndexingError(site, "Неожиданная ошибка");
+                    log.info("Unexpected exception site: {} message: {}", site.getUrl() , ex.getMessage());
+                    indexErrorHandler(site, "Неожиданная ошибка");
                 }
                 if (!indexingProcessing.get()) {
                     log.warn("Индексация остановлена пользователем, сайт:" + site.getUrl());
-                    handleIndexingError(site, "Индексация остановлена пользователем");
+                    indexErrorHandler(site,"Индексация остановлена пользователем");
                 } else {
+                    site.setStatus(Status.INDEXED);
                     log.info("Проиндексирован сайт: {}", site.getUrl());
-                    saveIndexedSite(site);
                 }
+                saveIndexingSite(site);
             };
             Thread thread = new Thread(indexSite);
             indexingThreadList.add(thread);
@@ -87,18 +92,18 @@ public class ApiServiceImpl implements ApiService {
     }
 
     @Override
-    public void refreshPage(String urlPage) throws URISyntaxException {
-        if (!isValidUrlPage(urlPage)) {
+    public void refreshPage(String urlPage)  {
+        String siteUrl = UrlValidator.getSiteUrl(urlPage);
+        if (!isValidUrlPage(urlPage,siteUrl)) {
             log.info("not valid urlPage: {}", urlPage );
             throw new UrlNotInSiteListException();
         }
         Site site = new Site();
-        URI uri = new URI(urlPage);
-        String path = uri.getPath();
-        String siteUrl = urlPage.replace(path, "/");
         Site existSite = siteRepository.getSiteByUrl(siteUrl);
         site.setId(existSite.getId());
         site.setUrl(existSite.getUrl());
+        site.setStatus(Status.INDEXING);
+
         try {
             log.info("Запущена переиндексация страницы: {}", urlPage);
             PageFinder pageFinder = new PageFinder(site,
@@ -107,20 +112,24 @@ public class ApiServiceImpl implements ApiService {
             pageFinder.refreshPage(urlPage);
         } catch (SecurityException ex) {
             log.info("Security Exception: {}", ex.getMessage());
-            handleIndexingError(site, ex.getMessage());
+            indexErrorHandler(site,ex.getMessage());
         } catch (Exception ex) {
             log.info("Unexpected exception: {}", ex.getMessage());
+            indexErrorHandler(site,"Неожиданная ошибка");
         }
+
         log.info("Проиндексирован сайт: {}", site.getName());
-        saveIndexedSite(site);
+        site.setStatus(Status.INDEXED);
+
+        saveIndexingSite(site);
     }
 
-    private boolean isValidUrlPage(String urlPage) {
+    private boolean isValidUrlPage(String urlPage, String urlSite) {
         if (urlPage.isBlank()) {
             return false;
         }
 
-        if (!isTrustedUrl(urlPage)) {
+        if (!isTrustedUrl(urlPage, urlSite)) {
             return false;
         }
 
@@ -133,14 +142,19 @@ public class ApiServiceImpl implements ApiService {
                 .toList();
     }
 
-    private boolean isTrustedUrl(String urlPage) {
+    private boolean isTrustedUrl(String urlPage, String urlSite) {
         for (String trustedUrl : getUrlsToIndexing()) {
-            if (urlPage.startsWith(trustedUrl)) {
+            if (UrlValidator.isInternalUrl(urlPage, urlSite)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private void indexErrorHandler(Site site, String errorMessage) {
+        site.setStatus(Status.FAILED);
+        site.setLastError(errorMessage);
     }
 
     @Transactional
@@ -158,21 +172,13 @@ public class ApiServiceImpl implements ApiService {
     }
 
     @Transactional
-    private void handleIndexingError(Site indexingSite, String errorMessage) {
+    private void saveIndexingSite(Site indexingSite) {
         int id = indexingSite.getId();
-        Site site = siteRepository.findById(id).orElseThrow();
-        site.setStatus(Status.FAILED);
-        site.setLastError(errorMessage);
+        Site site = siteRepository.findById(id).orElseThrow(() -> new RuntimeException("Сайт id = " + id + " не найден в БД"));
+        site.setStatus(indexingSite.getStatus());
+        site.setLastError(indexingSite.getLastError());
         site.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
         siteRepository.save(site);
     }
 
-    @Transactional
-    private void saveIndexedSite(Site indexingSite) {
-        int id = indexingSite.getId();
-        Site site = siteRepository.findById(id).orElseThrow();
-        site.setStatus(Status.INDEXED);
-        site.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-        siteRepository.save(site);
-    }
 }

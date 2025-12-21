@@ -9,14 +9,18 @@ import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.ConfigConnection;
+import searchengine.exception.InvalidWebLinkException;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.repository.PageRepository;
 import searchengine.services.PageIndexerService;
+import searchengine.util.UrlValidator;
 
 import javax.net.ssl.SSLHandshakeException;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RecursiveAction;
@@ -90,7 +94,7 @@ public class PageFinder extends RecursiveAction {
         Page indexingPage = new Page();
         indexingPage.setSite(site);
         try {
-            String path = new URI(urlPage).getPath();
+            String path = UrlValidator.getPath(urlPage);
             indexingPage.setPath(path);
             Connection connection = getConnection(urlPage);
             var response = connection.execute();
@@ -121,18 +125,17 @@ public class PageFinder extends RecursiveAction {
     }
 
     @Transactional
-    public void refreshPage(String urlPage) throws URISyntaxException {
-        URI uri = new URI(urlPage);
-        String path =  uri.getPath() != null ? uri.getPath(): "/";
-        log.info("urlPage02: '{}' site id: '{}' path: '{}'", urlPage, site.getId(), path);
+    public void refreshPage(String urlPage) {
+
         Page refreshPage = new Page();
         refreshPage.setSite(site);
+        String path = UrlValidator.getPath(urlPage);
         refreshPage.setPath(path);
         refreshPage.setPageContent("");
+
         try {
             Optional<Page> result = pageRepository.getPageBySiteIdAndPath(site.getId(), path);
             result.ifPresent(page -> refreshPage.setId(page.getId()));
-            result.ifPresent(page -> pageRepository.deleteById(page.getId()));
             Connection connection = getConnection(urlPage);
             var response = connection.execute();
             refreshPage.setAnswerCode(response.statusCode());
@@ -180,8 +183,7 @@ public class PageFinder extends RecursiveAction {
         if (link.isBlank()) {
             return false;
         }
-        if (!link.matches(mask)) {
-//            log.info("link {} is invalid for mask {}", link, mask);
+        if (!UrlValidator.isInternalUrl(link, site.getUrl())) {
             return false;
         }
         if (visitedLinks.contains(link)) {
@@ -199,7 +201,7 @@ public class PageFinder extends RecursiveAction {
             return 525;
         } else if (e.getMessage().contains("timeout")) {
             return 408;
-        } else if (e instanceof URISyntaxException) {
+        } else if (e instanceof MalformedURLException || e instanceof URISyntaxException) {
             return 404;
         } else {
             return -1;
