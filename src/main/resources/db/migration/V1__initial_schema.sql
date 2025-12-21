@@ -1,5 +1,26 @@
 -- V1__Initial_schema.sql
 
+-- Таблица Site
+CREATE TABLE IF NOT EXISTS site (
+    id SERIAL PRIMARY KEY,
+    status VARCHAR(50) NOT NULL,
+    status_time TIMESTAMP NOT NULL,
+    last_error VARCHAR(255),
+    url VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL
+);
+
+-- Таблица Page
+CREATE TABLE IF NOT EXISTS page (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL,
+    path VARCHAR(255) NOT NULL,
+    response_code INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    FOREIGN KEY (site_id) REFERENCES site(id),
+    UNIQUE (path, site_id)
+);
+
 -- Таблица Index
 CREATE TABLE IF NOT EXISTS search_index (
     id SERIAL PRIMARY KEY,
@@ -18,27 +39,6 @@ CREATE TABLE IF NOT EXISTS lemma (
     frequency INTEGER NOT NULL,
     FOREIGN KEY (site_id) REFERENCES site(id),
     UNIQUE (lemma_text, site_id)
-);
-
--- Таблица Page
-CREATE TABLE IF NOT EXISTS page (
-    id SERIAL PRIMARY KEY,
-    site_id INTEGER NOT NULL,
-    path VARCHAR(255) NOT NULL,
-    response_code INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    FOREIGN KEY (site_id) REFERENCES site(id),
-    UNIQUE (path, site_id)
-);
-
--- Таблица Site
-CREATE TABLE IF NOT EXISTS site (
-    id SERIAL PRIMARY KEY,
-    status VARCHAR(50) NOT NULL,
-    status_time TIMESTAMP NOT NULL,
-    last_error VARCHAR(255),
-    url VARCHAR(255) UNIQUE NOT NULL,
-    name VARCHAR(255) NOT NULL
 );
 
 -- Индексы для оптимизации поиска
