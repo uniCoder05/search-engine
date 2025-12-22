@@ -14,11 +14,7 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         ddl-auto: update
-        format_sql: true
-        type:
-          descriptor:
-            sql:
-              BasicBinder: TRACE
+
   flyway:
     enabled: true
     baseline-on-migrate: true

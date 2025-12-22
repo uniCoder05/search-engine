@@ -85,6 +85,7 @@ public class PageFinder extends RecursiveAction {
 
     public void crawl(Set<PageFinder> subTasks) {
         pause(100, 300);
+        log.info("crawl url {}", urlPage);
         if (!indexingProcessing.get()) {
             return;
         }

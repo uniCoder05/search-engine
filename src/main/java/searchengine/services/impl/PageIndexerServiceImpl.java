@@ -16,7 +16,8 @@ import searchengine.services.PageIndexerService;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -33,14 +34,15 @@ public class PageIndexerServiceImpl implements PageIndexerService {
         try {
             Map<String, Integer> lemmas = lemmaService.getLemmasFromText(html);
             saveLemmasForPage(lemmas, indexingPage);
-            log.debug("Лемматизация страницы завершена за {} мс количество найденных лемм: {}", (System.currentTimeMillis() - start), lemmas.size());
+            log.debug("Лемматизация страницы ID={} завершена за {} мс количество найденных лемм: {}", indexingPage.getId(), (System.currentTimeMillis() - start), lemmas.size());
         } catch (IOException e) {
-            log.error(String.valueOf(e));
+            log.error("Ошибка при лемматизации страницы ID={}", indexingPage.getId(), e);
             throw new RuntimeException(e);
         }
     }
 
     @Override
+    @Transactional
     public void refreshIndex(Page refreshPage) {
         String html = refreshPage.getPageContent();
         long start = System.currentTimeMillis();
@@ -54,20 +56,29 @@ public class PageIndexerServiceImpl implements PageIndexerService {
             saveLemmasForPage(lemmas, refreshPage);
             log.debug("Лемматизация страницы обновлена за {} мс количество найденных лемм: {}", (System.currentTimeMillis() - start), lemmas.size());
         } catch (IOException e) {
-            log.error(String.valueOf(e));
-            throw new RuntimeException(e);
+            log.error("Ошибка при обновлении индекса страницы ID={}", refreshPage.getId(), e);
+            throw new RuntimeException("Не удалось проиндексировать страницу", e);
         }
     }
 
-    @Transactional
     private void refreshLemma(Page refreshPage) {
         List<Index> indexes = indexSearchRepository.findAllByPageId(refreshPage.getId());
+        if (indexes.isEmpty()) {
+            return;
+        }
+        Set<Integer> lemmaIds = indexes.stream()
+                .map(idx -> idx.getLemma().getId())
+                .collect(Collectors.toSet());
+
+        Map<Integer, Lemma> lemmasMap = lemmaRepository.findAllById(lemmaIds).stream()
+                .collect(Collectors.toMap(Lemma::getId, lemma -> lemma));
+
         indexes.forEach(idx -> {
-            Optional<Lemma> lemmaToRefresh = lemmaRepository.findById(idx.getLemma().getId());
-            lemmaToRefresh.ifPresent(lemma -> {
-                lemma.setFrequency(lemma.getFrequency() - idx.getLemma().getFrequency());
+            Lemma lemma = lemmasMap.get(idx.getLemma().getId());
+            if (lemma != null) {
+                lemma.setFrequency(lemma.getFrequency() - idx.getRank());
                 lemmaRepository.saveAndFlush(lemma);
-            });
+            }
         });
     }
 
@@ -76,7 +87,7 @@ public class PageIndexerServiceImpl implements PageIndexerService {
         Lemma existLemmaInDB = lemmaRepository.lemmaExist(lemma, indexingPage.getSite().getId());
         if (existLemmaInDB != null) {
             existLemmaInDB.setFrequency(existLemmaInDB.getFrequency() + rank);
-            lemmaRepository.saveAndFlush(existLemmaInDB);
+            lemmaRepository.save(existLemmaInDB);
             createIndex(indexingPage, existLemmaInDB, rank);
         } else {
             try {
@@ -87,10 +98,11 @@ public class PageIndexerServiceImpl implements PageIndexerService {
                 lemmaRepository.saveAndFlush(newLemmaToDB);
                 createIndex(indexingPage, newLemmaToDB, rank);
             } catch (DataIntegrityViolationException ex) {
-                log.debug("Ошибка при сохранении леммы, такая лемма уже существует. Вызов повторного сохранения");
+                log.debug("Не удалось сохранить лемму '{}'. Повторная попытка.", lemma, ex);
                 saveLemma(lemma, rank, indexingPage);
             }
         }
+
     }
 
     private void createIndex(Page indexingPage, Lemma lemmaInDB, Integer rank) {
@@ -103,8 +115,6 @@ public class PageIndexerServiceImpl implements PageIndexerService {
             index.setPage(indexingPage);
             index.setLemma(lemmaInDB);
             index.setRank(rank);
-            index.setLemma(lemmaInDB);
-            index.setPage(indexingPage);
             indexSearchRepository.save(index);
         }
     }
