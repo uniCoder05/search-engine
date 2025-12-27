@@ -12,4 +12,5 @@ import org.springframework.stereotype.Component;
 public class ConfigConnection {
     private String userAgent;
     private String referer;
+    private int timeout;
 }

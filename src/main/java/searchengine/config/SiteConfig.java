@@ -7,7 +7,7 @@ import java.net.URL;
 
 @Setter
 @Getter
-public class Site {
+public class SiteConfig {
     private URL url;
     private String name;
 }

@@ -3,192 +3,217 @@ package searchengine.services.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Connection;
+import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.select.Elements;
+import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.ConfigConnection;
 import searchengine.model.Page;
-import searchengine.model.SitePage;
+import searchengine.model.Site;
 import searchengine.repository.PageRepository;
-import searchengine.repository.SiteRepository;
-import searchengine.services.LemmaService;
 import searchengine.services.PageIndexerService;
+import searchengine.util.UrlValidator;
 
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import javax.net.ssl.SSLHandshakeException;
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
 public class PageFinder extends RecursiveAction {
-    private final PageIndexerService pageIndexerService;
-    private final LemmaService lemmaService;
-    private final SiteRepository siteRepository;
+    private static final String MASK = "[^#?.]+";
+
+    private final Site site;
     private final PageRepository pageRepository;
+    private final PageIndexerService pageIndexerService;
     private final AtomicBoolean indexingProcessing;
     private final ConfigConnection configConnection;
-    private final Set<String> urlSet = new HashSet<>();
-    private final String pagePath;
-    private final SitePage siteDomain;
-    private final ConcurrentHashMap<String, Page> resultForkJoinPoolIndexedPages;
+    private final String urlPage;
+    private final Set<String> visitedLinks;
+    private final String mask;
 
-    public PageFinder(SiteRepository siteRepository, PageRepository pageRepository,
-                      SitePage siteDomain, String pagePath,
-                      ConcurrentHashMap<String, Page> resultForkJoinPoolIndexedPages,
-                      ConfigConnection configConnection, LemmaService lemmaService,
-                      PageIndexerService pageIndexerService, AtomicBoolean indexingProcessing) {
-        this.siteRepository = siteRepository;
+    public PageFinder(Site site,
+                      PageRepository pageRepository,
+                      ConfigConnection configConnection,
+                      PageIndexerService pageIndexerService,
+                      AtomicBoolean indexingProcessing) {
+        String url = site.getUrl();
         this.pageRepository = pageRepository;
-        this.pagePath = pagePath;
-        this.resultForkJoinPoolIndexedPages = resultForkJoinPoolIndexedPages;
+        this.urlPage = url;
         this.configConnection = configConnection;
         this.indexingProcessing = indexingProcessing;
-        this.siteDomain = siteDomain;
-        this.lemmaService = lemmaService;
+        this.site = site;
         this.pageIndexerService = pageIndexerService;
+        this.mask = url + MASK;
+        this.visitedLinks = ConcurrentHashMap.newKeySet();
+    }
+
+    private PageFinder(PageFinder pageFinder, String url) {
+        this.site = pageFinder.site;
+        this.pageRepository = pageFinder.pageRepository;
+        this.urlPage = url;
+        this.configConnection = pageFinder.configConnection;
+        this.indexingProcessing = pageFinder.indexingProcessing;
+        this.pageIndexerService = pageFinder.pageIndexerService;
+        this.mask = pageFinder.mask;
+        this.visitedLinks = pageFinder.visitedLinks;
     }
 
     @Override
     protected void compute() {
-        if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
+        if(!indexingProcessing.get()) {
             return;
         }
-        Page indexingPage = new Page();
-        indexingPage.setPath(pagePath);
-        indexingPage.setSite(siteDomain);
-
-        try {
-            Connection connect = getConnection(siteDomain.getUrl() + pagePath);
-            Document doc = connect.timeout(60000).get();
-
-            indexingPage.setPageContent(getContent(doc));
-            if (indexingPage.getPageContent() == null || indexingPage.getPageContent().isEmpty() || indexingPage.getPageContent().isBlank()) {
-                throw new Exception("Content of site id:" + indexingPage.getSite().getId() + ", page:" + indexingPage.getPath() + " is null or empty");
-            }
-            Elements pages = doc.getElementsByTag("a");
-            for (org.jsoup.nodes.Element element : pages)
-                if (!element.attr("href").isEmpty() && element.attr("href").charAt(0) == '/') {
-                    if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
-                        return;
-                    } else if (resultForkJoinPoolIndexedPages.get(element.attr("href")) == null) {
-                        urlSet.add(element.attr("href"));
-                    }
-                }
-            indexingPage.setAnswerCode(doc.connection().response().statusCode());
-        } catch (Exception ex) {
-            errorHandling(ex, indexingPage);resultForkJoinPoolIndexedPages.putIfAbsent(indexingPage.getPath(), indexingPage);
-            SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-            sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-            siteRepository.save(sitePage);
-            pageRepository.save(indexingPage);
-            log.debug("ERROR INDEXATION, siteId:{}, path:{},code:{}, error:{}", indexingPage.getSite().getId(), indexingPage.getPath(), indexingPage.getAnswerCode(), ex.getMessage());
+        if(!visitedLinks.add(urlPage)) {
             return;
         }
-        if (resultForkJoinPoolIndexedPages.get(pagePath) != null || !indexingProcessing.get()) {
-            return;
-        }
-        resultForkJoinPoolIndexedPages.putIfAbsent(indexingPage.getPath(), indexingPage);
-        SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-        sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-        siteRepository.save(sitePage);
-        pageRepository.save(indexingPage);
-        pageIndexerService.indexHtml(indexingPage.getPageContent(), indexingPage);
-        List<PageFinder> indexingPagesTasks = new ArrayList<>();
-        for (String url : urlSet) {
-            if (resultForkJoinPoolIndexedPages.get(url) == null && indexingProcessing.get()) {
-                PageFinder task = new PageFinder(siteRepository, pageRepository, sitePage, url, resultForkJoinPoolIndexedPages, configConnection, lemmaService, pageIndexerService, indexingProcessing);
-                task.fork();
-                indexingPagesTasks.add(task);
-            }
-        }
-        for (PageFinder page : indexingPagesTasks) {
+        Set<PageFinder> subTasks = new HashSet<>();
+        crawl(subTasks);
+        for (PageFinder task : subTasks) {
             if (!indexingProcessing.get()) {
                 return;
             }
-            page.join();
+            task.join();
+        }
+    }
+
+    public void crawl(Set<PageFinder> subTasks) {
+        pause(100, 300);
+        log.info("crawl url {}", urlPage);
+        if (!indexingProcessing.get()) {
+            return;
+        }
+        Page indexingPage = new Page();
+        indexingPage.setSite(site);
+        try {
+            String path = UrlValidator.getPath(urlPage);
+            indexingPage.setPath(path);
+            Connection connection = getConnection(urlPage);
+            var response = connection.execute();
+            indexingPage.setAnswerCode(response.statusCode());
+            Document document = response.parse();
+            indexingPage.setPageContent(getContent(document));
+            Set<String> urlSet = getInnerLinks(document);
+
+            for (String url : urlSet) {
+                if(!indexingProcessing.get()) {
+                    return;
+                }
+                PageFinder task = new PageFinder(this, url);
+                task.fork();
+                subTasks.add(task);
+            }
+        } catch (Exception ex) {
+            indexingPage.setAnswerCode(getErrorCodeFromException(ex));
+            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, indexingPage.getAnswerCode(), ex.getMessage());
+        }
+
+        pageRepository.save(indexingPage);
+        if(shouldIndexPage(indexingPage)) {
+            log.info("Indexing page url: {}", urlPage);
+            pageIndexerService.index(indexingPage);
         }
 
     }
 
-    public void refreshPage() {
+    @Transactional
+    public void refreshPage(String urlPage) {
 
-        Page indexingPage = new Page();
-        indexingPage.setPath(pagePath);
-        indexingPage.setSite(siteDomain);
+        Page refreshPage = new Page();
+        refreshPage.setSite(site);
+        String path = UrlValidator.getPath(urlPage);
+        refreshPage.setPath(path);
+        refreshPage.setPageContent("");
 
         try {
-            Connection connect = getConnection(siteDomain.getUrl() + pagePath);
-            Document doc = connect.timeout(60000).get();
-            indexingPage.setPageContent(getContent(doc));
-            indexingPage.setAnswerCode(doc.connection().response().statusCode());
-            if (indexingPage.getPageContent() == null || indexingPage.getPageContent().isEmpty() || indexingPage.getPageContent().isBlank()) {
-                throw new Exception("Content of site id:" + indexingPage.getSite().getId() + ", page:" + indexingPage.getPath() + " is null or empty");
-            }
+            Optional<Page> result = pageRepository.getPageBySiteIdAndPath(site.getId(), path);
+            result.ifPresent(page -> refreshPage.setId(page.getId()));
+            Connection connection = getConnection(urlPage);
+            var response = connection.execute();
+            refreshPage.setAnswerCode(response.statusCode());
+            Document doc = response.parse();
+            refreshPage.setPageContent(getContent(doc));
         } catch (Exception ex) {
-            errorHandling(ex, indexingPage);
-            SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-            sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-            siteRepository.save(sitePage);
-            pageRepository.save(indexingPage);
-            return;
+            log.info("urlPage exception: {} message: {}", urlPage, ex.getMessage());
+            refreshPage.setAnswerCode(getErrorCodeFromException(ex));
+            log.debug("ERROR INDEXATION, url:{}, code:{}, error:{}", urlPage, refreshPage.getAnswerCode(), ex.getMessage());
         }
-        SitePage sitePage = siteRepository.findById(siteDomain.getId()).orElseThrow();
-        sitePage.setStatusTime(Timestamp.valueOf(LocalDateTime.now()));
-        siteRepository.save(sitePage);
+        pageRepository.save(refreshPage);
+        if(shouldIndexPage(refreshPage)) {
+            pageIndexerService.refreshIndex(refreshPage);
+        }
+    }
 
-        Page pageToRefresh = pageRepository.findPageBySiteIdAndPath(pagePath, sitePage.getId());
-        if (pageToRefresh != null) {
-            pageToRefresh.setAnswerCode(indexingPage.getAnswerCode());
-            pageToRefresh.setPageContent(indexingPage.getPageContent());
-            pageRepository.save(pageToRefresh);
-            pageIndexerService.refreshIndex(indexingPage.getPageContent(), pageToRefresh);
-        } else {
-            pageRepository.save(indexingPage);
-            pageIndexerService.refreshIndex(indexingPage.getPageContent(), indexingPage);
-        }
+    private Set<String> getInnerLinks(Document document) {
+        Elements links = document.select("a[href]");
+        return links.stream()
+                .map(link -> link.attr("abs:href"))
+                .filter(this::isValidLink)
+                .collect(Collectors.toSet());
+    }
+
+    private boolean shouldIndexPage(Page page) {
+        return page.getAnswerCode() == 200
+                && !page.getPageContent().isBlank()
+                && indexingProcessing.get();
     }
 
     private Connection getConnection(String url) {
 
         return Jsoup.connect(url)
                 .userAgent(configConnection.getUserAgent())
-                .referrer(configConnection.getReferer());
+                .referrer(configConnection.getReferer())
+                .timeout(configConnection.getTimeout())
+                .maxBodySize(0);
     }
 
     private String getContent(Document document) {
-        return document.head() + String.valueOf(document.body());
+        return document.html();
     }
 
-    void errorHandling(Exception ex, Page indexingPage) {
-        String message = ex.toString();
-        int errorCode;
-        if (message.contains("UnsupportedMimeTypeException")) {
-            errorCode = 415;    // Ссылка на pdf, jpg, png документы
-        } else if (message.contains("Status=401")) {
-            errorCode = 401;    // На несуществующий домен
-        } else if (message.contains("UnknownHostException")) {
-            errorCode = 401;
-        } else if (message.contains("Status=403")) {
-            errorCode = 403;    // Нет доступа, 403 Forbidden
-        } else if (message.contains("Status=404")) {
-            errorCode = 404;    // // Ссылка на pdf-документ, несущ. страница, проигрыватель
-        } else if (message.contains("Status=500")) {
-            errorCode = 401;    // Страница авторизации
-        } else if (message.contains("ConnectException: Connection refused")) {
-            errorCode = 500;    // ERR_CONNECTION_REFUSED, не удаётся открыть страницу
-        } else if (message.contains("SSLHandshakeException")) {
-            errorCode = 525;
-        } else if (message.contains("Status=503")) {
-            errorCode = 503; // Сервер временно не имеет возможности обрабатывать запросы по техническим причинам (обслуживание, перегрузка и прочее).
-        } else {
-            errorCode = -1;
+    private boolean isValidLink(String link) {
+        if (link.isBlank()) {
+            return false;
         }
-        indexingPage.setAnswerCode(errorCode);
+        if (!UrlValidator.isInternalUrl(link, site.getUrl())) {
+            return false;
+        }
+        if (visitedLinks.contains(link)) {
+            return false;
+        }
+
+        return true;
+    }
+
+
+    private int getErrorCodeFromException(Exception e) {
+        if (e instanceof HttpStatusException) {
+            return ((HttpStatusException) e).getStatusCode();
+        } else if (e instanceof SSLHandshakeException) {
+            return 525;
+        } else if (e.getMessage().contains("timeout")) {
+            return 408;
+        } else if (e instanceof MalformedURLException || e instanceof URISyntaxException) {
+            return 404;
+        } else {
+            return -1;
+        }
+    }
+
+    private void pause(int min, int max)  {
+        int duration = min + (int)(Math.random() * (max - min));
+        try {
+            //log.info(Thread.currentThread().getName() + " sleeping for " + duration + " ms");
+            Thread.sleep(duration);
+        } catch (InterruptedException e) {
+            log.info("InterruptedException while sleep", e);
+            indexingProcessing.set(false);
+        }
     }
 }

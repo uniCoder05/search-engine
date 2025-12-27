@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import lombok.extern.slf4j.Slf4j;
 import org.hibernate.annotations.BatchSize;
 
 import java.sql.Timestamp;
@@ -14,13 +15,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+@Slf4j
 @Entity
 @Table(name = "site")
 @NoArgsConstructor
 @Getter
 @Setter
 @ToString(exclude = {"pages", "lemmas"})
-public class SitePage {
+public class Site {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -53,7 +55,7 @@ public class SitePage {
     @BatchSize(size = 20)
     private List<Lemma> lemmas = new ArrayList<>();
 
-    public SitePage(Status status, Timestamp statusTime, String lastError, String url, String name) {
+    public Site(Status status, Timestamp statusTime, String lastError, String url, String name) {
         this.status = status;
         this.statusTime = statusTime;
         this.lastError = lastError;
@@ -65,12 +67,19 @@ public class SitePage {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        SitePage site = (SitePage) o;
+        Site site = (Site) o;
         return Objects.equals(url, site.url);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(url);
+    }
+
+    //Для автоматического обновления statusTime при сохранении SitePage
+    @PrePersist
+    protected void onPersist() {
+//        statusTime = Timestamp.valueOf(LocalDateTime.now());
+        log.info("Update status time on >>> {}", statusTime);
     }
 }
