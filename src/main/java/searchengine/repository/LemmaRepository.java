@@ -7,7 +7,6 @@ import org.springframework.stereotype.Repository;
 import searchengine.model.Lemma;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 @Repository

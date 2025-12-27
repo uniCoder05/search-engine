@@ -6,7 +6,6 @@ import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
 import searchengine.services.PageIndexerService;
 
-import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,6 +74,4 @@ public class Crawler extends RecursiveAction {
             pageIndexerService.index(page);
         }
     }
-
-
 }
