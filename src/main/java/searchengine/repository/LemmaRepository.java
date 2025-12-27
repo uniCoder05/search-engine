@@ -7,6 +7,8 @@ import org.springframework.stereotype.Repository;
 import searchengine.model.Lemma;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Repository
 public interface LemmaRepository extends JpaRepository<Lemma, Integer> {
@@ -24,4 +26,16 @@ public interface LemmaRepository extends JpaRepository<Lemma, Integer> {
 
     @Query("SELECT l FROM Lemma l WHERE l.lemma = :lemma AND (:siteId IS NULL OR l.site.id = :siteId)")
     List<Lemma> findLemmasByLemmaAndSiteId(@Param("lemma") String lemma, @Param("siteId") Integer siteId);
+
+
+    @Query("SELECT l.lemma, SUM(l.frequency) AS totalFrequency " +
+            "FROM Lemma l " +
+            "WHERE l.lemma IN :lemmas " +
+            "AND (:siteId IS NULL OR l.site.id = :siteId) " +
+            "GROUP BY l.lemma")
+    List<Object[]> findLemmaFrequencies(
+            @Param("lemmas") Set<String> lemmas,
+            @Param("siteId") Integer siteId
+    );
+
 }

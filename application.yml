@@ -9,7 +9,7 @@ spring:
     hikari:
       auto-commit: false
   jpa:
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -30,8 +30,8 @@ indexing-settings:
 #      name: РИА новости
     - url: https://photo.sendel.ru/
       name: Константин Шибков
-#    - url: https://www.svetlovka.ru/
-#      name: ЦГМБ им М.А. Светлова
+    - url: https://www.svetlovka.ru/
+      name: ЦГМБ им М.А. Светлова
 
 connection-settings:
   userAgent: Mozilla/5.0 (X11; Fedora;Linux x86; rv:60.0) Gecko/20100101 Firefox/60.0
