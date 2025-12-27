@@ -91,6 +91,7 @@ public class PageFinder extends RecursiveAction {
         }
         Page indexingPage = new Page();
         indexingPage.setSite(site);
+        indexingPage.setPageContent("");
         try {
             String path = UrlValidator.getPath(urlPage);
             indexingPage.setPath(path);

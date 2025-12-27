@@ -219,11 +219,14 @@ public class SearchServiceImpl implements SearchService {
                 SnippetResult snippetResult = extractSnippetWithHighlightingAndContext(sentence, lemmas);
                 if (snippetResult.hasMatches()) {
                     String truncatedSnippet = truncateSnippet(snippetResult.getSnippet(), MAX_SNIPPET_LENGTH);
-                    Site sitePage = rank.getPage().getSite();
+                    Page page = rank.getPage();
+                    Site site = page.getSite();
+                    String url = site.getUrl();;
+                    String uri = page.getPath().substring(1);
                     result.add(new SearchDataResponse(
-                            sitePage.getUrl().substring(sitePage.getUrl().length() - 1),
-                            sitePage.getName(),
-                            rank.getPage().getPath(),
+                            url,
+                            site.getName(),
+                            uri,
                             doc.title(),
                             truncatedSnippet,
                             rank.getRelativeRelevance(),
