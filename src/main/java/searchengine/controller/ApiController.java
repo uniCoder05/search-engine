@@ -1,4 +1,4 @@
-package searchengine.controllers;
+package searchengine.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -6,13 +6,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import searchengine.config.ListSiteConfig;
-import searchengine.dto.responses.IndexingResponse;
-import searchengine.dto.responses.NotOkResponse;
-import searchengine.dto.responses.OkResponse;
-import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.services.ApiService;
-import searchengine.services.SearchService;
-import searchengine.services.StatisticsService;
+import searchengine.dto.response.IndexingResponse;
+import searchengine.dto.response.NotOkResponse;
+import searchengine.dto.response.OkResponse;
+import searchengine.dto.statistic.StatisticsResponse;
+import searchengine.service.ApiService;
+import searchengine.service.SearchService;
+import searchengine.service.StatisticsService;
 
 import java.io.IOException;
 import java.net.MalformedURLException;

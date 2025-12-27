@@ -1,4 +1,4 @@
-package searchengine.services.impl;
+package searchengine.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +12,7 @@ import searchengine.config.ConfigConnection;
 import searchengine.model.Page;
 import searchengine.model.Site;
 import searchengine.repository.PageRepository;
-import searchengine.services.PageIndexerService;
+import searchengine.service.PageIndexerService;
 import searchengine.util.UrlValidator;
 
 import javax.net.ssl.SSLHandshakeException;
@@ -91,6 +91,7 @@ public class PageFinder extends RecursiveAction {
         }
         Page indexingPage = new Page();
         indexingPage.setSite(site);
+        indexingPage.setPageContent("");
         try {
             String path = UrlValidator.getPath(urlPage);
             indexingPage.setPath(path);

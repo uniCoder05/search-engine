@@ -1,6 +1,6 @@
-package searchengine.services;
+package searchengine.service;
 
-import searchengine.dto.statistics.StatisticsResponse;
+import searchengine.dto.statistic.StatisticsResponse;
 
 import java.net.MalformedURLException;
 
