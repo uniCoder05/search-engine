@@ -78,8 +78,8 @@ public class ApiController {
     public ResponseEntity<Object> search(
             @RequestParam(required = false) String query,
             @RequestParam(required = false) String site,
-            @RequestParam(required = false, defaultValue = "0") Integer offset,
-            @RequestParam(required = false, defaultValue = "20") Integer limit
+            @RequestParam(required = false) Integer offset,
+            @RequestParam(required = false) Integer limit
     ) throws IOException {
         if (query == null || query.isBlank()) {
             return ResponseEntity.badRequest().body(new NotOkResponse("Задан пустой поисковый запрос"));

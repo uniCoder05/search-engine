@@ -40,9 +40,12 @@ public class SearchServiceImpl implements SearchService {
     private final LemmaService lemmaService;
     private final Status indexSuccessStatus = Status.INDEXED;
 
+    private List<SearchDataResponse> lastSearchResult = new ArrayList<>();
+    private String lastQuery = "";
+
     @Transactional
     @Override
-    public ResponseEntity<Object> search(String query, String site, Integer offset, Integer limit) throws IOException {
+    public ResponseEntity<Object> search(String query, String site, int offset, int limit) throws IOException {
         if (query == null || query.isEmpty()) {
             return ResponseEntity.ok().body(new NotOkResponse("Задан пустой поисковый запрос"));
         }
@@ -50,6 +53,11 @@ public class SearchServiceImpl implements SearchService {
             return ResponseEntity.badRequest().body(new NotOkResponse("Индексация сайта для поиска не закончена"));
         }
 
+        if (lastQuery.equals(query) && offset != 0) {
+            return createResponse(lastSearchResult, offset, limit);
+        }
+
+        lastQuery = query;//Запоминаем текст последнего поискового запроса
         Site searchSite = siteRepository.getSiteByUrl(site);
         Map<String, Integer> lemmasMapOfQuery = lemmaService.getLemmasFromText(query);
         log.info("lemmas for search size: {}", lemmasMapOfQuery.size());
@@ -72,14 +80,30 @@ public class SearchServiceImpl implements SearchService {
         // Преобразование в SearchDataResponse
         List<SearchDataResponse> searchDataResponseList = convertToSearchDataResponse(pagesRelevance, lemmasSortList);
         //Сортировка по релевантности и по количеству найденных слов
-        searchDataResponseList.sort(
-                Comparator.comparingDouble(SearchDataResponse::getRelevance).reversed()
-                        .thenComparingInt(SearchDataResponse::getWordsFound).reversed());
-        int from = limit * offset;
-        int to = Math.min(from + limit, searchDataResponseList.size());
-        List<SearchDataResponse> result = searchDataResponseList.subList(from, to);
+        lastSearchResult = searchDataResponseList.stream()
+                .sorted(Comparator.comparingDouble(SearchDataResponse::getRelevance).reversed())
+                .toList();
 
-        return ResponseEntity.ok().body(new SearchResponse(true, searchDataResponseList.size(), result));
+        return createResponse(lastSearchResult, offset, limit);
+    }
+
+    private ResponseEntity<Object> createResponse(List<SearchDataResponse> searchResult, int offset, int limit) {
+
+        int totalSize = searchResult.size(); //количеств строк в поисковом ответе
+        //Если количество строк в ответе меньше лимита для вывода, то выводим весь результат сразу
+        if (totalSize <= limit) {
+            return ResponseEntity.ok().body(new SearchResponse(true, totalSize, searchResult));
+        }
+        //Если смещение выходит за размеры ответа, возвращаем пустой результат
+        if(offset > totalSize) {
+            return getNoResultsResponse();
+        }
+
+        int to = Math.min(offset + limit, totalSize);
+
+        List<SearchDataResponse> result = searchResult.subList(offset, to);
+
+        return ResponseEntity.ok().body(new SearchResponse(true, searchResult.size(), result));
     }
 
     private Boolean checkIndexStatusNotIndexed(String site) {
@@ -105,7 +129,12 @@ public class SearchServiceImpl implements SearchService {
                 row -> ((Long) row[1]).intValue()
 
         ));
+
         log.info("lemma frequencies size: {}", lemmaFrequencies.size());
+        if (lemmaFrequencies.isEmpty()) {
+            return result;
+        }
+
         printLemmaFrequenciesMap(lemmaFrequencies);
         //Исключаем высокочастотные леммы
         for (String lemma : uniqSimpleLemmas) {
