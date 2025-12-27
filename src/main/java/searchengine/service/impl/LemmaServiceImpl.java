@@ -1,4 +1,4 @@
-package searchengine.services.impl;
+package searchengine.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.lucene.morphology.LuceneMorphology;
@@ -6,7 +6,7 @@ import org.apache.lucene.morphology.WrongCharaterException;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.jsoup.Jsoup;
 import org.springframework.stereotype.Service;
-import searchengine.services.LemmaService;
+import searchengine.service.LemmaService;
 
 import java.io.IOException;
 import java.util.*;

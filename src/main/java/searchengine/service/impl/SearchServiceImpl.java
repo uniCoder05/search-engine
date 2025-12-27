@@ -1,6 +1,5 @@
-package searchengine.services.impl;
+package searchengine.service.impl;
 
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -11,16 +10,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.dto.RankDto;
-import searchengine.dto.responses.NotOkResponse;
-import searchengine.dto.responses.SearchDataResponse;
-import searchengine.dto.responses.SearchResponse;
+import searchengine.dto.response.NotOkResponse;
+import searchengine.dto.response.SearchDataResponse;
+import searchengine.dto.response.SearchResponse;
 import searchengine.model.*;
 import searchengine.repository.IndexRepository;
 import searchengine.repository.LemmaRepository;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-import searchengine.services.LemmaService;
-import searchengine.services.SearchService;
+import searchengine.service.LemmaService;
+import searchengine.service.SearchService;
 
 import java.io.IOException;
 import java.util.*;

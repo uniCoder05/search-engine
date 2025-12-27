@@ -75,11 +75,4 @@ public class Site {
     public int hashCode() {
         return Objects.hash(url);
     }
-
-    //Для автоматического обновления statusTime при сохранении SitePage
-    @PrePersist
-    protected void onPersist() {
-//        statusTime = Timestamp.valueOf(LocalDateTime.now());
-        log.info("Update status time on >>> {}", statusTime);
-    }
 }

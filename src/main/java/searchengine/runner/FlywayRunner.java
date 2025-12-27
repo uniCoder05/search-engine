@@ -1,4 +1,4 @@
-package searchengine.runners;
+package searchengine.runner;
 
 import org.flywaydb.core.Flyway;
 import org.springframework.boot.CommandLineRunner;

@@ -1,4 +1,4 @@
-package searchengine.services.impl;
+package searchengine.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +12,8 @@ import searchengine.model.Site;
 import searchengine.model.Status;
 import searchengine.repository.PageRepository;
 import searchengine.repository.SiteRepository;
-import searchengine.services.ApiService;
-import searchengine.services.PageIndexerService;
+import searchengine.service.ApiService;
+import searchengine.service.PageIndexerService;
 import searchengine.util.UrlValidator;
 
 import java.sql.Timestamp;

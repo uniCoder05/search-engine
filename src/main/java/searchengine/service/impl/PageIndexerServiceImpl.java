@@ -1,4 +1,4 @@
-package searchengine.services.impl;
+package searchengine.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,8 +10,8 @@ import searchengine.model.Lemma;
 import searchengine.model.Page;
 import searchengine.repository.IndexRepository;
 import searchengine.repository.LemmaRepository;
-import searchengine.services.LemmaService;
-import searchengine.services.PageIndexerService;
+import searchengine.service.LemmaService;
+import searchengine.service.PageIndexerService;
 
 import java.io.IOException;
 import java.util.List;
