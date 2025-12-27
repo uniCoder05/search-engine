@@ -1,5 +1,6 @@
 package searchengine.services.impl;
 
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
@@ -32,6 +33,9 @@ import java.util.stream.Collectors;
 public class SearchServiceImpl implements SearchService {
 
     private static final double FREQUENCY_LIMIT_PROPORTION = 80.0;
+    private static final int MAX_SNIPPET_LENGTH = 200;
+    private static final int LEFT_OFFSET = 30;   // отступ влево от первого найденного слова
+    private static final int RIGHT_OFFSET = 30;  // отступ вправо от последнего найденного слова
 
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
@@ -95,7 +99,7 @@ public class SearchServiceImpl implements SearchService {
             return ResponseEntity.ok().body(new SearchResponse(true, totalSize, searchResult));
         }
         //Если смещение выходит за размеры ответа, возвращаем пустой результат
-        if(offset > totalSize) {
+        if (offset > totalSize) {
             return getNoResultsResponse();
         }
 
@@ -129,13 +133,10 @@ public class SearchServiceImpl implements SearchService {
                 row -> ((Long) row[1]).intValue()
 
         ));
-
         log.info("lemma frequencies size: {}", lemmaFrequencies.size());
         if (lemmaFrequencies.isEmpty()) {
             return result;
         }
-
-        printLemmaFrequenciesMap(lemmaFrequencies);
         //Исключаем высокочастотные леммы
         for (String lemma : uniqSimpleLemmas) {
             int frequency = lemmaFrequencies.get(lemma);
@@ -146,8 +147,6 @@ public class SearchServiceImpl implements SearchService {
                 result.put(lemma, frequency);
             }
         }
-        log.info("ПОСЛЕ ИСКЛЮЧЕНИЯ ВЫСОКОЧАСТОТНЫХ ЛЕММ");
-        printLemmaFrequenciesMap(result);
         return result;
     }
 
@@ -205,74 +204,152 @@ public class SearchServiceImpl implements SearchService {
     private void sortByRelativeRelevanceDesc(List<RankDto> ranks) {
         ranks.sort(Comparator.comparingDouble(RankDto::getRelativeRelevance).reversed());
     }
-    /* TODO: реализовать получение snippet из текста страницы
-        - ограничить размер snippet
-        - задать фиксированные отступы по краям найденного слова
-     */
+
     private List<SearchDataResponse> convertToSearchDataResponse(List<RankDto> ranks, List<String> lemmas) {
         List<SearchDataResponse> result = new ArrayList<>();
+
         for (RankDto rank : ranks) {
             Document doc = Jsoup.parse(rank.getPage().getPageContent());
-            //Получаем элементы, содержащие кириллический текст
-            List<String> sentences = doc.body().getElementsMatchingOwnText("[\\p{IsCyrillic}]").stream()
+            List<String> sentences = doc.body()
+                    .getElementsMatchingOwnText("[\\p{IsCyrillic}]")
+                    .stream()
                     .map(Element::text)
                     .toList();
 
             for (String sentence : sentences) {
-                StringBuilder textFromElement = new StringBuilder(sentence);
-                //Разбивка элемента на слова (по пробелам и знакам пунктуации)
-                String[] words = sentence.split("[\\s\\p{Punct}]+");
-                int searchWords = 0;
-
-                for (String word : words) {
-                    if (word.isEmpty()) continue;
-                    //Очистка слов от знаков пунктуации
-                    String cleanedWord = word.replaceAll("\\p{Punct}", "");
-                    //Получаем лемму "очищенного" слова
-                    String lemmaFromWord = lemmaService.getLemmaByWord(cleanedWord);
-                    //Если полученная лемма есть в поисковом запросе, выделяем его
-                    if (lemmas.contains(lemmaFromWord)) {
-                        markWord(textFromElement, word, 0);
-                        searchWords++;
-                    }
-                }
-
-                if (searchWords > 0) {
-                    Site sitePage = rank.getPage().getSite(); // Получаем напрямую из Page
-                    //Формирование отдельного SearchDataResponse и добавление в общий список
+                SnippetResult snippetResult = extractSnippetWithHighlightingAndContext(sentence, lemmas);
+                if (snippetResult.hasMatches()) {
+                    String truncatedSnippet = truncateSnippet(snippetResult.getSnippet(), MAX_SNIPPET_LENGTH);
+                    Site sitePage = rank.getPage().getSite();
                     result.add(new SearchDataResponse(
                             sitePage.getUrl().substring(sitePage.getUrl().length() - 1),
                             sitePage.getName(),
                             rank.getPage().getPath(),
                             doc.title(),
-                            textFromElement.toString(),
+                            truncatedSnippet,
                             rank.getRelativeRelevance(),
-                            searchWords
+                            snippetResult.getMatchCount()
                     ));
                 }
             }
         }
-
         return result;
     }
 
-    private void markWord(StringBuilder textFromElement, String word, int startPosition) {
-        int start = textFromElement.indexOf(word, startPosition);
-        if (start == -1) return;
 
-        // Проверка на уже выделенное слово
-        int checkStart = Math.max(0, start - 3);
-        int foundPos = textFromElement.indexOf("<b>", checkStart);
-        if (foundPos == start - 3 && foundPos >= 0) {
-            // Слово уже выделено, продолжаем поиск дальше
-            markWord(textFromElement, word, start + word.length());
-            return;
+    //Формирует сниппет с выделением ключевых слов и контекстом вокруг них.
+    private SnippetResult extractSnippetWithHighlightingAndContext(String sentence, List<String> lemmas) {
+        List<HighlightedWord> highlightedWords = new ArrayList<>();
+        int matchCount = 0;
+
+        String[] words = sentence.split("[\\s\\p{Punct}]+");
+        int[] wordPositions = calculateWordPositions(sentence, words);
+
+        for (int i = 0; i < words.length; i++) {
+            String word = words[i];
+            if (word.isEmpty()) continue;
+
+            String cleanedWord = word.replaceAll("\\p{Punct}", "");
+            String lemmaFromWord = lemmaService.getLemmaByWord(cleanedWord);
+
+
+            if (lemmas.contains(lemmaFromWord)) {
+                highlightedWords.add(new HighlightedWord(word, wordPositions[i], word.length()));
+                matchCount++;
+            }
         }
 
-        int end = start + word.length();
-        textFromElement.insert(start, "<b>");
-        // Вставляем закрывающий тег, учитывая длину строки
-        textFromElement.insert(Math.min(end + 3, textFromElement.length()), "</b>");
+        if (highlightedWords.isEmpty()) {
+            return new SnippetResult("", 0);
+        }
+
+        int firstWordStart = highlightedWords.get(0).startPos;
+        int lastWordEnd = highlightedWords.get(highlightedWords.size() - 1).endPos;
+
+        int contextStart = Math.max(0, firstWordStart - LEFT_OFFSET);
+        int contextEnd = Math.min(sentence.length(), lastWordEnd + RIGHT_OFFSET);
+
+        StringBuilder snippet = new StringBuilder();
+        for (int i = 0; i < words.length; i++) {
+            int wordStart = wordPositions[i];
+            int wordEnd = wordStart + words[i].length();
+
+
+            if (wordEnd < contextStart || wordStart > contextEnd) {
+                continue; // слово вне контекста
+            }
+
+            if (isWordHighlighted(words[i], highlightedWords)) {
+                snippet.append("<b>").append(words[i]).append("</b> ");
+            } else {
+                snippet.append(words[i]).append(" ");
+            }
+        }
+
+        return new SnippetResult(snippet.toString().trim(), matchCount);
+    }
+
+
+    //Рассчитывает стартовые позиции каждого слова в исходной строке.
+    private int[] calculateWordPositions(String sentence, String[] words) {
+        int[] positions = new int[words.length];
+        int pos = 0;
+        for (int i = 0; i < words.length; i++) {
+            // Находим позицию слова, пропуская разделители
+            while (pos < sentence.length() && !sentence.substring(pos).startsWith(words[i])) {
+                pos++;
+            }
+            positions[i] = pos;
+            pos += words[i].length();
+        }
+        return positions;
+    }
+
+
+     //Проверяет, нужно ли выделять слово.
+    private boolean isWordHighlighted(String word, List<HighlightedWord> highlightedWords) {
+        return highlightedWords.stream().anyMatch(hw -> hw.word.equals(word));
+    }
+
+
+    //Обрезает сниппет до максимальной длины, сохраняя целостность слов.
+    private String truncateSnippet(String snippet, int maxLength) {
+        if (snippet.length() <= maxLength) {
+            return snippet;
+        }
+        int lastSpace = snippet.lastIndexOf(' ', maxLength);
+        if (lastSpace == -1) {
+            return snippet.substring(0, maxLength) + "...";
+        } else {
+            return snippet.substring(0, lastSpace).trim() + "...";
+        }
+    }
+
+    // Вспомогательные классы
+    private static class HighlightedWord {
+        String word;
+        int startPos;
+        int endPos;
+
+        public HighlightedWord(String word, int startPos, int length) {
+            this.word = word;
+            this.startPos = startPos;
+            this.endPos = startPos + length;
+        }
+    }
+
+    private static class SnippetResult {
+        private final String snippet;
+        private final int matchCount;
+
+        public SnippetResult(String snippet, int matchCount) {
+            this.snippet = snippet;
+            this.matchCount = matchCount;
+        }
+
+        public String getSnippet() { return snippet; }
+        public int getMatchCount() { return matchCount; }
+        public boolean hasMatches() { return matchCount > 0; }
     }
 
     private ResponseEntity<Object> getNoResultsResponse() {
@@ -321,8 +398,4 @@ public class SearchServiceImpl implements SearchService {
                 .toList();
     }
 
-    private void printLemmaFrequenciesMap(Map<String, Integer> frequencies) {
-        log.info(">>>>>>>>>>>>>>>>>> Print lemmas frequencies map <<<<<<<<<<<<<<<<<<<<<<");
-        frequencies.forEach((k, v) -> log.info("lemma: {}  frequency: {}", k, v));
-    }
 }
