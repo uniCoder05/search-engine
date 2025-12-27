@@ -205,7 +205,10 @@ public class SearchServiceImpl implements SearchService {
     private void sortByRelativeRelevanceDesc(List<RankDto> ranks) {
         ranks.sort(Comparator.comparingDouble(RankDto::getRelativeRelevance).reversed());
     }
-
+    /* TODO: реализовать получение snippet из текста страницы
+        - ограничить размер snippet
+        - задать фиксированные отступы по краям найденного слова
+     */
     private List<SearchDataResponse> convertToSearchDataResponse(List<RankDto> ranks, List<String> lemmas) {
         List<SearchDataResponse> result = new ArrayList<>();
         for (RankDto rank : ranks) {
