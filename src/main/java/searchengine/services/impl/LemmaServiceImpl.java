@@ -44,12 +44,14 @@ public class LemmaServiceImpl implements LemmaService {
 
     @Override
     public String getLemmaByWord(String word) {
+        log.debug("Обрабатывается слово: '{}'", word);
         if (isWrongWord(word)) {
+            log.debug("Слово отклонено по критериям валидности");
             return "";
         }
         try {
             List<String> normalWordForms = luceneMorphology.getNormalForms(word);
-            if (normalWordForms.isEmpty()) {
+            if (normalWordForms == null || normalWordForms.isEmpty()) {
                 return "";
             }
 
@@ -65,14 +67,17 @@ public class LemmaServiceImpl implements LemmaService {
     }
 
     private String[] getPreparedWordsArray(String rawText) {
-        String rgx = "[^a-zа-яё]+"; //Для разбиения текста на слова по всему, что не является буквами
-        return rawText.toLowerCase().split(rgx);
+        String rgx = "[^a-яё\\-']+"; //Для разбиения текста на слова по всему, что не является буквами
+        String cleaned = rawText.toLowerCase().replaceAll(rgx, " ");
+        return cleaned.trim().split("\\s+");
     }
 
     private boolean isWrongWord(String word) {
-        return  word == null ||
-                word.isEmpty() ||
-                !word.matches("^[а-яА-ЯёЁ].*");//слово начинается на букву русского алфавита
+        if(word == null || word.isEmpty()) {
+            return true;
+        }
+        // Проверяем, что слово содержит только кириллические буквы и длину ≥ 2
+        return  !word.matches("^[а-яА-ЯёЁ][а-яА-ЯёЁ\\-']*$") || word.length() < 2;
     }
 
     private boolean isValidWord(String word) {
